@@ -4,90 +4,186 @@
 #include "stdafx.h"
 #include <opencv2\opencv.hpp>
 
-int main()
+void findInnerEdges(const cv::Mat &img,
+	std::vector<cv::Point> &lpts,
+	std::vector<cv::Point> &rpts)
 {
-	cv::Mat src;
-	src= cv::imread("./test_images/test2.jpg");
-	
+	lpts.clear();
+	rpts.clear();
+	for (int i = img.rows - 1; i >= 0; --i)
+	{
+		cv::Point lpt, rpt;
+		lpt.y = i;
+		rpt.y = i;
+		bool rFound= false, lFound=false;
+		for (int j = 0; j < img.cols / 2 - 1; ++j)
+		{
+			int jr = img.cols / 2 + j;
+			int jl = img.cols / 2 - j; 
+			if (img.at<uchar>(i,jr)> 200  && !rFound)
+			{
+				rpt.x = jr;
+				rFound= true;
+			}
+			if (img.at<uchar>(i, jl) > 200  && !lFound)
+			{
+				lpt.x = jl;
+				lFound = true;
+			}
+			if (rFound && lFound)
+			{
+				break;
+			}
+		}
+		if (rFound)
+		{
+			rpts.push_back(rpt);
+		}
+		if (lFound)
+		{
+			lpts.push_back(lpt);
+		}
+	}
+}
+void getLineEndPoints(const cv::Vec4f &line, 
+	const std::vector<cv::Point> &pts, int ymax, 
+	cv::Point &p1, cv::Point &p2)
+{
+	int y = pts.back().y;
+	float vx = line[0];
+	float vy = line[1];
+	float x0 = line[2];
+	float y0 = line[3];
+	int x = cvRound(x0 + (y - y0) / vy*vx);
+	p1.x = x; p1.y = y;
+	p2.y = ymax;
+	p2.x= cvRound(x0 + (ymax - y0) / vy*vx);
+}
+
+void maskEdgeByPolygon(const cv::Mat &grayEdge, cv::Mat &dst)
+{
+	cv::Mat mask;
+	mask = cv::Mat::zeros(grayEdge.size(), grayEdge.type());
+
+	cv::Point pts[1][4];
+	int cols = grayEdge.cols;
+	int rows = grayEdge.rows;
+	pts[0][0] = (cv::Point(cols*0.05, rows*0.9));
+	pts[0][1] = (cv::Point(cols*0.95, rows*0.9));
+	pts[0][2] = (cv::Point(cols*0.45, 0.5*rows));
+	pts[0][3] = (cv::Point(cols*0.55, 0.5*rows));
+
+	int npts[] = { 4 };
+	const cv::Point* ppt[1] = { pts[0] };
+	cv::fillPoly(mask, ppt, npts, 1, cv::Scalar(255));
+	cv::bitwise_and(grayEdge, mask, dst);
+}
+
+void colorThresholding(const cv::Mat &src, cv::Mat &maskOut)
+{
+	// convert to hsv
+	cv::Mat edgeH;
+	cv::cvtColor(src, edgeH, cv::COLOR_BGR2HSV);
+
+	// color thresholding
+	cv::Scalar lb(10, 105, 200); //30,145,255 yellow
+	cv::Scalar ub(40, 175, 255);
+	cv::Scalar lbw(10, 0, 200); //32,8,255 white
+	cv::Scalar ubw(40, 40, 255);
+	cv::Scalar lbg(160, 0, 140); //188,7,163 gray
+	cv::Scalar ubg(220, 40, 180);
+	cv::Mat edgeY, edgeW, edgeG;
+	cv::inRange(edgeH, lb, ub, edgeY);
+	cv::inRange(edgeH, lbw, ubw, edgeW);
+	cv::inRange(edgeH, lbg, ubg, edgeG);
+	cv::bitwise_or(edgeY, edgeW, maskOut);
+	cv::bitwise_or(maskOut, edgeG, maskOut);
+}
+
+void detectLane(const cv::Mat &src, cv::Mat &dst)
+{
 	// convert to gray
 	cv::Mat gray;
 	cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+
+	// blur
+	cv::blur(gray, gray, cv::Size(5, 5), cv::Point(3, 3));
 
 	// canny edge
 	cv::Mat edge;
 	cv::Canny(gray, edge, 100, 255);
 
 	// mask
-	cv::Mat mask, edgeB;
-	mask = cv::Mat::zeros(gray.size(), gray.type());
-	//cv::Rect roi(0, gray.rows*0.5, gray.cols, gray.rows*0.5);
-	//mask(roi) = 255*cv::Mat::ones(cv::Size(gray.cols, gray.rows*0.5), gray.type());
+	cv::Mat edgeB;
+	maskEdgeByPolygon(edge, edgeB);
 	
-	cv::Point pts[1][4];
-	pts[0][0]= (cv::Point(gray.cols*0.05, gray.rows*0.9));
-	pts[0][1]= (cv::Point(gray.cols*0.95, gray.rows*0.9));
-	pts[0][2]= (cv::Point(gray.cols*0.45, 0.5*gray.rows));
-	pts[0][3] = (cv::Point(gray.cols*0.55, 0.5*gray.rows));
-	
-	int npts[] = { 4 };
-	const cv::Point* ppt[1] = { pts[0] };
-	cv::fillPoly(mask, ppt, npts,1,cv::Scalar(255));
-	cv::bitwise_and(edge, mask, edgeB);
-
 	// dilate
-	cv::Mat elem = cv::getStructuringElement(cv::MORPH_ELLIPSE, 
+	cv::Mat elem = cv::getStructuringElement(cv::MORPH_ELLIPSE,
 		cv::Size(11, 11), cv::Point(5, 5));
 	cv::dilate(edgeB, edgeB, elem);
 
 	// coloring edge
 	cv::Mat edgeC;
-	cv::bitwise_and(src,src, edgeC, edgeB);
-
-	// convert to hsv
-	cv::Mat edgeH;
-	cv::cvtColor(edgeC, edgeH, cv::COLOR_BGR2HSV);
+	cv::bitwise_and(src, src, edgeC, edgeB);
 
 	// color thresholding
-	cv::Scalar lb(10, 105, 200); //30,145,255
-	cv::Scalar ub(40, 175, 255);
-	cv::Scalar lbw(10, 0, 200); //32,8,255
-	cv::Scalar ubw(40, 40, 255);
-	cv::Scalar lbg(160, 0, 140); //188,7,163
-	cv::Scalar ubg(220, 40, 180);
-	cv::Mat edgeY, edgeW, edgeG;
-	cv::inRange(edgeH, lb, ub, edgeY);
-	cv::inRange(edgeH, lbw, ubw, edgeW);
-	cv::inRange(edgeH, lbg, ubg, edgeG);
-	cv::bitwise_or(edgeY, edgeW, edgeH);
-	cv::bitwise_or(edgeH, edgeG, edgeH);
-
-	/*
-	// find contours
-	std::vector<std::vector<cv::Point>> contours;
-	std::vector<cv::Vec4i> hier;
-	cv::findContours(edgeH, contours, hier, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE);
+	cv::Mat edgeMask;
+	colorThresholding(edgeC, edgeMask);
 	
-	// draw contrours
-	cv::Mat edgeCtr = cv::Mat::zeros(edgeH.size(), CV_8UC3);
-	for (size_t i = 0; i < contours.size(); ++i)
+	// find inner edges
+	std::vector<cv::Point> lpts, rpts;
+	findInnerEdges(edgeMask, lpts, rpts);
+	/* debugging codes
+	for (auto p : lpts)
 	{
-		cv::drawContours(edgeCtr, contours, i, cv::Scalar(0, 0, 255), 3, 8, hier);
+		std::cout << "left points: " << p << "\n";
+	}
+	for (auto p : rpts)
+	{
+		std::cout << "right points: " << p << "\n";
 	}*/
 
-	// find line segments
-	cv::Mat edgeLine = cv::Mat::zeros(edgeH.size(), CV_8UC3);
-	std::vector<cv::Vec4i> lines;
-	cv::HoughLinesP(edgeH, lines, 1, CV_PI / 180, 20, 100, 400);
-	for (size_t i = 0; i < lines.size(); i++)
-	{
-		line(edgeLine, cv::Point(lines[i][0], lines[i][1]),
-			cv::Point(lines[i][2], lines[i][3]), cv::Scalar(0, 0, 255), 3, 8);
-	}
+	cv::Vec4f lLine, rLine;
+	cv::fitLine(lpts, lLine, CV_DIST_L2, 0, 0.01, 0.01);
+	cv::fitLine(rpts, rLine, CV_DIST_L2, 0, 0.01, 0.01);
 
+	// get inner edges end points
+	cv::Point rp1, rp2, lp1, lp2;
+	getLineEndPoints(lLine, lpts, edgeMask.rows - 1, lp1, lp2);
+	getLineEndPoints(rLine, rpts, edgeMask.rows - 1, rp1, rp2);
+
+	// draw lines
+	cv::Mat edgeLine = cv::Mat::zeros(edgeMask.size(), CV_8UC3);
+	line(edgeLine, lp1, lp2, cv::Scalar(0, 0, 255), 10, 8);
+	line(edgeLine, rp1, rp2, cv::Scalar(0, 0, 255), 10, 8);
+
+	/*  debugging codes
+	for (auto pp : rpts)
+	{
+		cv::circle(edgeLine, pp, 3, cv::Scalar(0, 0, 255));
+	}
+	for (auto pp : lpts)
+	{
+		cv::circle(edgeLine, pp, 3, cv::Scalar(0, 230, 255));
+	}
+	*/
+
+	// blend
+	cv::addWeighted(edgeLine, 0.5, src, 1.0, 0, dst);
+
+}
+
+int main()
+{
+	cv::Mat src,dst;
+	src= cv::imread("./test_images/test2.jpg");
+	
+	detectLane(src, dst);
+	
 	cv::imshow("Original Image", src);
-	cv::imshow("Edges", edge);
-	cv::imshow("Residual Edges", edgeH);
-	cv::imshow("Color Edges", edgeLine);
+	//cv::imshow("Edges", edge);
+	//cv::imshow("Residual Edges", edgeH);
+	cv::imshow("Color Edges", dst);
 	int ck = cv::waitKey(0);
 	if (char(ck) == 'q')
 	{
