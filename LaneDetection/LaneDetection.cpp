@@ -102,16 +102,25 @@ void colorThresholding(const cv::Mat &src, cv::Mat &maskOut)
 
 void detectLane(const cv::Mat &src, cv::Mat &dst)
 {
-	// convert to gray
-	cv::Mat gray;
-	cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
-
 	// blur
-	cv::blur(gray, gray, cv::Size(5, 5), cv::Point(3, 3));
+	//cv::Mat blurImg;
+	//cv::blur(src, blurImg, cv::Size(5, 5), cv::Point(3, 3));
+
+	// color thresholding
+	//cv::Mat colorMask, colorImg;
+	//colorThresholding(src, colorMask);
+	//cv::bitwise_and(src, src, colorImg, colorMask);
+
+	// convert to gray
+	//cv::Mat gray;
+	//cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+
+	cv::Mat hsv;
+	cv::cvtColor(src, hsv, cv::COLOR_BGR2HSV);
 
 	// canny edge
 	cv::Mat edge;
-	cv::Canny(gray, edge, 100, 255);
+	cv::Canny(src, edge, 100, 255);
 
 	// mask
 	cv::Mat edgeB;
@@ -123,16 +132,16 @@ void detectLane(const cv::Mat &src, cv::Mat &dst)
 	cv::dilate(edgeB, edgeB, elem);
 
 	// coloring edge
-	cv::Mat edgeC;
-	cv::bitwise_and(src, src, edgeC, edgeB);
+	//cv::Mat edgeC;
+	//cv::bitwise_and(src, src, edgeC, edgeB);
 
 	// color thresholding
-	cv::Mat edgeMask;
-	colorThresholding(edgeC, edgeMask);
+	//cv::Mat edgeMask;
+	//colorThresholding(edgeC, edgeMask);
 	
 	// find inner edges
 	std::vector<cv::Point> lpts, rpts;
-	findInnerEdges(edgeMask, lpts, rpts);
+	findInnerEdges(edgeB, lpts, rpts);
 	/* debugging codes
 	for (auto p : lpts)
 	{
@@ -143,43 +152,47 @@ void detectLane(const cv::Mat &src, cv::Mat &dst)
 		std::cout << "right points: " << p << "\n";
 	}*/
 
-	cv::Vec4f lLine, rLine;
-	cv::fitLine(lpts, lLine, CV_DIST_L2, 0, 0.01, 0.01);
-	cv::fitLine(rpts, rLine, CV_DIST_L2, 0, 0.01, 0.01);
-
-	// get inner edges end points
-	cv::Point rp1, rp2, lp1, lp2;
-	getLineEndPoints(lLine, lpts, edgeMask.rows - 1, lp1, lp2);
-	getLineEndPoints(rLine, rpts, edgeMask.rows - 1, rp1, rp2);
-
-	// draw lines
-	cv::Mat edgeLine = cv::Mat::zeros(edgeMask.size(), CV_8UC3);
-	line(edgeLine, lp1, lp2, cv::Scalar(0, 0, 255), 10, 8);
-	line(edgeLine, rp1, rp2, cv::Scalar(0, 0, 255), 10, 8);
-
-	/*  debugging codes
-	for (auto pp : rpts)
+	dst = src.clone();
+	if (lpts.size() > 1 && rpts.size() > 1)
 	{
-		cv::circle(edgeLine, pp, 3, cv::Scalar(0, 0, 255));
-	}
-	for (auto pp : lpts)
-	{
-		cv::circle(edgeLine, pp, 3, cv::Scalar(0, 230, 255));
-	}
-	*/
+		cv::Vec4f lLine, rLine;
+		cv::fitLine(lpts, lLine, CV_DIST_L2, 0, 0.01, 0.01);
+		cv::fitLine(rpts, rLine, CV_DIST_L2, 0, 0.01, 0.01);
 
-	// blend
-	cv::addWeighted(edgeLine, 0.5, src, 1.0, 0, dst);
+		// get inner edges end points
+		cv::Point rp1, rp2, lp1, lp2;
+		getLineEndPoints(lLine, lpts, edgeB.rows - 1, lp1, lp2);
+		getLineEndPoints(rLine, rpts, edgeB.rows - 1, rp1, rp2);
 
+		// draw lines
+		cv::Mat edgeLine = cv::Mat::zeros(edgeB.size(), CV_8UC3);
+		line(edgeLine, lp1, lp2, cv::Scalar(0, 0, 255), 10, 8);
+		line(edgeLine, rp1, rp2, cv::Scalar(0, 0, 255), 10, 8);
+
+		/*  debugging codes
+		for (auto pp : rpts)
+		{
+			cv::circle(edgeLine, pp, 3, cv::Scalar(0, 0, 255));
+		}
+		for (auto pp : lpts)
+		{
+			cv::circle(edgeLine, pp, 3, cv::Scalar(0, 230, 255));
+		}
+		*/
+
+		// blend
+		cv::addWeighted(edgeLine, 0.5, src, 1.0, 0, dst);
+	}
+	dst = hsv.clone();
 }
 
-int main()
+void testImage(const std::string &fname)
 {
-	cv::Mat src,dst;
-	src= cv::imread("./test_images/test2.jpg");
-	
+	cv::Mat src, dst;
+	src = cv::imread(fname);
+
 	detectLane(src, dst);
-	
+
 	cv::imshow("Original Image", src);
 	//cv::imshow("Edges", edge);
 	//cv::imshow("Residual Edges", edgeH);
@@ -189,6 +202,35 @@ int main()
 	{
 		cv::destroyAllWindows();
 	}
+}
+
+void testVideo(const std::string &fname)
+{
+	cv::VideoCapture cap;
+	cap.open(fname);
+
+	std::string winN = "Lane Detection";
+	cv::namedWindow(winN, cv::WINDOW_AUTOSIZE);
+	cv::Mat src, dst;
+	while (cap.read(src))
+	{
+		detectLane(src, dst);
+		cv::imshow(winN, dst);
+		int kc= cv::waitKey(0);
+		if (char(kc) == 'q')
+		{
+			break;
+		}
+	}
+	cv::destroyAllWindows();
+}
+
+
+int main()
+{
+	//testImage("./test_images/test2.jpg");
+	testVideo("./challenge_video.mp4");
+
 	std::system("pause");
     return 0;
 }
