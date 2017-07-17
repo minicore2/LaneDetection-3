@@ -154,11 +154,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\..\..\..\..\..\..\dev\expcode\expvideo\CameraUtility.h" />
+    <ClInclude Include="LaneDetector.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\..\..\..\..\..\..\dev\expcode\expvideo\CameraUtility.cpp" />
+    <ClCompile Include="LaneDetector.cpp" />
     <ClCompile Include="LaneDetection.cpp" />
     <ClCompile Include="stdafx.cpp" />
   </ItemGroup>
