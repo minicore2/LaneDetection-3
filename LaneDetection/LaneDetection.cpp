@@ -123,17 +123,28 @@ void constructPerspectiveMapping(cv::Mat &tm_vp, cv::Size imgSize)
 	cv::Mat rm_cv, rm_vc;
 	rotzyx(-90 * CV_PI / 180, 0, -90 * CV_PI / 180, rm_cv);
 	rm_vc = rm_cv.t();
+	// translation part
+	cv::Mat t_cv= cv::Mat::zeros(3,1,CV_64FC1);
+	cv::Mat t_vc;
+	t_cv.at<double>(0, 0) = 0;
+	t_cv.at<double>(1, 0) = 0;
+	t_cv.at<double>(2, 0) = 1;
+	t_vc = -rm_vc*t_cv;
+
 	// build 3x4 transformation matrix 
 	cv::Mat tm_vc= cv::Mat::zeros(3,4, CV_64FC1);
 	// fill in the rotation part
 	cv::Rect roi(0, 0, 3, 3);	
 	rm_vc.copyTo(tm_vc(roi));
-	
+	tm_vc.at<double>(0, 3) = t_vc.at<double>(0, 0);
+	tm_vc.at<double>(1, 3) = t_vc.at<double>(1, 0);
+	tm_vc.at<double>(2, 3) = t_vc.at<double>(2, 0);
+
 	// build intrinsic matrix
 	double tx_cp = imgSize.width/2;
 	double ty_cp = imgSize.height/2;
-	double focal = 0.1;  // 10 cm
-	double pixelPerM = 10; // 10 pixel per meter
+	double focal = 1;  // 10 cm
+	double pixelPerM = 2000; // 10 pixel per meter
 	cv::Mat km = cv::Mat::eye(3, 3, CV_64FC1);
 	km.at<double>(0, 0) = pixelPerM*focal;
 	km.at<double>(1, 1) = pixelPerM*focal;
@@ -151,18 +162,21 @@ void getGroundImage(const cv::Mat &src, const cv::Mat &tm_vp,
 	gp.D = 0;
 	gp.setNormal(0, 0, 1);
 	VirtualCamera vc{ 0,0,10,0,-90 * CV_PI / 180,0 };
+	vc.fovAngle = 135 * CV_PI / 180;
+	vc.resolutionX = 400;
+	vc.aspect = 1;
 	
 	cv::Mat xmap, ymap, zmap;
 	vc.hitPlane(gp, xmap, ymap, zmap);
 	// allocate output image size
 	img = cv::Mat::zeros(xmap.size(), CV_8UC3);
 
-	cv::Mat x_v = cv::Mat::zeros(3, 1, CV_64FC1);
+	cv::Mat x_v = cv::Mat::ones(4, 1, CV_64FC1);
 	cv::Mat x_p;
 	// fill in colors
-	for (int i = 0; i < src.rows; ++i)
+	for (int i = 0; i < img.rows; ++i)
 	{
-		for (int j = 0; j < src.cols; ++j)
+		for (int j = 0; j < img.cols; ++j)
 		{
 			
 			x_v.at<double>(0,0) = xmap.at<double>(i, j);
