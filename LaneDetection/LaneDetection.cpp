@@ -7,7 +7,7 @@
 
 void testImage(const std::string &fname)
 {
-	cv::Mat src, dst;
+	/*cv::Mat src, dst;
 	src = cv::imread(fname);
 
 	//detectLane(src, dst);
@@ -20,7 +20,7 @@ void testImage(const std::string &fname)
 	if (char(ck) == 'q')
 	{
 		cv::destroyAllWindows();
-	}
+	}*/
 }
 
 void testVideo(const std::string &fname)
@@ -28,6 +28,8 @@ void testVideo(const std::string &fname)
 	cv::VideoCapture cap;
 	cap.open(fname);
 
+	LaneDetector ld;
+	
 	std::string winN = "Lane Detection";
 	cv::namedWindow(winN, cv::WINDOW_AUTOSIZE);
 	cv::Mat src, dst,dst1, tm_vp;
@@ -36,9 +38,10 @@ void testVideo(const std::string &fname)
 	{
 		if (ct == 0)
 		{
-			constructPerspectiveMapping(tm_vp, src.size());
+			ld.constructPerspectiveMapping(src.size());
+			ld.constructLUT(src.size(), 400, 0.05, 0.025);
 		}
-		detectLane(src,tm_vp,dst,dst1);
+		ld.detectLane(src,dst,dst1);
 		cv::imshow(winN, dst);
 		cv::imshow("test", dst1);
 		int kc= cv::waitKey(0);
