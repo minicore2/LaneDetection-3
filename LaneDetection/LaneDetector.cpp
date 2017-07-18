@@ -224,8 +224,8 @@ bool LaneDetector::findInnerEdges(const cv::Mat & gray,
 
 	// seperate points now and save the extreme values
 	std::vector<cv::Mat_<cv::Vec2b>> pointSets(nCluster);
-	std::vector<float> xMin(nCluster,1e10),
-		xMax(nCluster,0), xRange(nCluster,0);
+	std::vector<float> xMin(nCluster, 1e10),
+		xMax(nCluster, 0);
 	for (int i = 0; i < points.rows; ++i)
 	{
 		int iCluster = labels.at<int>(i);
@@ -249,17 +249,24 @@ bool LaneDetector::findInnerEdges(const cv::Mat & gray,
 		std::pair<int, float> pp;
 		pp.first = i;
 		pp.second = centers.at<float>(i, 0);
-		centerX.push_back(pp);
-		xRange[i] = xMax[i] - xMin[i];
+		if (xMax[i] - xMin[i] < 20)
+		{
+			centerX.push_back(pp);
+		}		
 	}
 	std::sort(centerX.begin(), centerX.end(),
 		[](auto p1, auto p2) {return p1.second < p2.second; });
-
+	
 	lpts.clear();
 	rpts.clear();
 
-	int lidx = centerX[0].first;
-	int ridx = centerX[2].first;
+	if (centerX.size() < 2)
+	{
+		return false;
+	}
+	
+	int lidx = centerX.front().first;
+	int ridx = centerX.back().first;
 	lpts = pointSets[lidx];
 	rpts = pointSets[ridx];
 
