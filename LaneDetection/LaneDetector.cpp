@@ -186,7 +186,7 @@ void LaneDetector::getGroundImage(const cv::Mat & src, cv::Mat & imgG)
 bool LaneDetector::findInnerEdges(const cv::Mat & gray, 
 	std::vector<cv::Point> &lpts, std::vector<cv::Point> &rpts)
 {
-	// convert to mat format
+	// get "on" points and convert to mat format
 	cv::Mat_<cv::Vec2f> points;
 	for (int i = 0; i < gray.rows; ++i)
 	{
@@ -201,6 +201,7 @@ bool LaneDetector::findInnerEdges(const cv::Mat & gray,
 			}
 		}
 	}
+	// if no point available, return false
 	if (points.rows == 0)
 	{
 		return false;
@@ -244,32 +245,46 @@ bool LaneDetector::findInnerEdges(const cv::Mat & gray,
 		
 	// get centerX and ranges
 	std::vector<std::pair<int,float>> centerX;
+	double lineWidth = 0.4 / mMPPx; 
 	for (int i = 0; i < centers.rows; ++i)
 	{
 		std::pair<int, float> pp;
 		pp.first = i;
 		pp.second = centers.at<float>(i, 0);
-		if (xMax[i] - xMin[i] < 20)
+		if (xMax[i] - xMin[i] < lineWidth)
 		{
 			centerX.push_back(pp);
 		}		
 	}
+	// ascending sort centerX
 	std::sort(centerX.begin(), centerX.end(),
 		[](auto p1, auto p2) {return p1.second < p2.second; });
 	
 	lpts.clear();
 	rpts.clear();
-
-	if (centerX.size() < 2)
+	
+	// if no clusters, return false
+	if (centerX.size() < 1)
 	{
 		return false;
 	}
 	
+	// check centers X distance. If too close, 
+	// combine clusters
 	int lidx = centerX.front().first;
 	int ridx = centerX.back().first;
-	lpts = pointSets[lidx];
-	rpts = pointSets[ridx];
-
+	float lx = centerX.front().second;
+	float rx = centerX.back().second;
+	if (std::abs(rx - lx) < lineWidth)
+	{
+		lpts = pointSets[lidx];
+		lpts.insert(lpts.end(), pointSets[ridx].begin(), pointSets[ridx].end());
+	}
+	else
+	{
+		lpts = pointSets[lidx];
+		rpts = pointSets[ridx];
+	}
 	
 	/*
 	//std::cout << "centers" << centers << "\n";

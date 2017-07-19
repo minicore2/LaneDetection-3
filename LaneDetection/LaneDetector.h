@@ -31,6 +31,13 @@ public:
 	void constructLUT(cv::Size imgSize,
 		int width, double mppx, double mppy);
 	
+	// find inner edges
+	// @gray: only take gray image
+	// @lpts: output points on the left side 
+	// @rpts: output points on the right side 
+	bool findInnerEdges(const cv::Mat &gray,
+		std::vector<cv::Point> &lpts, std::vector<cv::Point> &rpts);
+
 	// parallel project camera image to ground image
 	// @src: camera image
 	// @imgG: output ground image
@@ -48,15 +55,7 @@ public:
 	// mask the lane color, return the pixel in the 
 	// color (white or yellow) range
 	static void colorThresholding(const cv::Mat &src, cv::Mat &maskOut);
-
-	// find inner edges
-	// @gray: only take gray image
-	// @lpts: output points on the left side 
-	// @rpts: output points on the right side 
-	static bool findInnerEdges(const cv::Mat &gray,
-		std::vector<cv::Point> &lpts, std::vector<cv::Point> &rpts);
-
-
+	
 	// fit line
 	// @pts: points 2i
 	// @line: outcome line equation vector 3d (a,b,c) => 
