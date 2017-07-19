@@ -98,13 +98,24 @@ void getGroundImageFromVC(const cv::Mat &src, const cv::Mat &tm_vp,
 	}
 }
 
+LaneDetector::LaneDetector()
+{
+	mKFL = new cv::KalmanFilter(2, 1, 0);
+	mKFR = new cv::KalmanFilter(2, 1, 0);
+}
 
+LaneDetector::~LaneDetector()
+{
+	delete mKFL; mKFL = nullptr;
+	delete mKFR; mKFR = nullptr;
+}
 
-void LaneDetector::constructPerspectiveMapping(cv::Size imgSize)
+void LaneDetector::constructPerspectiveMapping(cv::Size imgSize,
+	double x, double y, double z,
+	double pan, double tilt, double roll)
 {
 	cv::Mat Mext;
-	getCameraExtrinsicMatrix3x4(0, 0, 1, 0, 3.0*CV_PI / 180, 0,
-		Mext);
+	getCameraExtrinsicMatrix3x4(x, y, z, pan, tilt, roll,Mext);
 	cv::Mat Mint;
 	double tx_cp = imgSize.width / 2;
 	double ty_cp = imgSize.height / 2;
@@ -143,8 +154,8 @@ void LaneDetector::constructLUT(cv::Size imgSize,
 	{
 		for (int j = 0; j < xsize; ++j)
 		{
-			gndPt.at<double>(0, 0) = (xsize - i)*mppx;
-			gndPt.at<double>(1, 0) = (ysize*0.5 - j)*mppy;
+			gndPt.at<double>(0, 0) = (ysize - i)*mppx;
+			gndPt.at<double>(1, 0) = (xsize*0.5 - j)*mppy;
 			gndPt.at<double>(2, 0) = 0;
 			srcPt = mTM_vp* gndPt;
 			srcPt = srcPt / srcPt.at<double>(2, 0); // normalize
@@ -158,6 +169,27 @@ void LaneDetector::constructLUT(cv::Size imgSize,
 			mLUT_v.at<int>(i, j) = v;
 		}
 	}
+}
+
+void LaneDetector::initKF(cv::Size imgSize)
+{
+	// for left
+	mKFL->transitionMatrix =(cv::Mat_<float>(2, 2) << 1, 1, 0, 1);
+	mKFL->statePre.at<float>(0) = imgSize.width/2 - 2/mMPPy;
+	mKFL->statePre.at<float>(1) = 0;
+	cv::setIdentity(mKFL->measurementMatrix);
+	cv::setIdentity(mKFL->processNoiseCov, cv::Scalar::all(1e-4));
+	cv::setIdentity(mKFL->measurementNoiseCov, cv::Scalar::all(20));
+	cv::setIdentity(mKFL->errorCovPost, cv::Scalar::all(0.1));
+
+	// for right
+	mKFR->transitionMatrix = (cv::Mat_<float>(2, 2) << 1, 1, 0, 1);
+	mKFR->statePre.at<float>(0) = imgSize.width / 2 + 2 / mMPPy;
+	mKFR->statePre.at<float>(1) = 0;
+	cv::setIdentity(mKFR->measurementMatrix);
+	cv::setIdentity(mKFR->processNoiseCov, cv::Scalar::all(1e-4));
+	cv::setIdentity(mKFR->measurementNoiseCov, cv::Scalar::all(20));
+	cv::setIdentity(mKFR->errorCovPost, cv::Scalar::all(0.1));
 }
 
 void LaneDetector::getGroundImage(const cv::Mat & src, cv::Mat & imgG)
@@ -183,7 +215,7 @@ void LaneDetector::getGroundImage(const cv::Mat & src, cv::Mat & imgG)
 	}
 }
 
-bool LaneDetector::findInnerEdges(const cv::Mat & gray, 
+bool LaneDetector::groupPoints(const cv::Mat & gray, 
 	std::vector<cv::Point> &lpts, std::vector<cv::Point> &rpts)
 {
 	// get "on" points and convert to mat format
@@ -202,7 +234,7 @@ bool LaneDetector::findInnerEdges(const cv::Mat & gray,
 		}
 	}
 	// if no point available, return false
-	if (points.rows == 0)
+	if (points.rows < 3)
 	{
 		return false;
 	}
@@ -320,12 +352,148 @@ bool LaneDetector::findInnerEdges(const cv::Mat & gray,
 	return true;
 }
 
-void LaneDetector::detectLane(const cv::Mat & src, cv::Mat & dst, cv::Mat & dst1)
+void LaneDetector::getPointsFromImage(const cv::Mat & gray,
+	int uStart, int uEnd, int vStart, int vEnd,
+	cv::Mat &points)
 {
-	// blur
-	//cv::Mat blurImg;
-	//cv::blur(src, blurImg, cv::Size(5, 5), cv::Point(3, 3));
+	cv::Mat_<cv::Vec2f> pts;
+	for (int i = vStart; i <= vEnd; ++i)
+	{
+		for (int j = uStart; j <=uEnd; ++j)
+		{
+			if (gray.at<uchar>(i, j) > 200)
+			{
+				cv::Vec2f pt;
+				pt[0]= j;
+				pt[1] = i;
+				pts.push_back(pt);
+			}
+		}
+	}
+	pts.copyTo(points);
+}
 
+void LaneDetector::findLaneByKF(const cv::Mat & gray, 
+	std::vector<cv::Point> &lanePts, bool left)
+{
+	int xsize = gray.cols;
+	int ysize = gray.rows;
+	int nDivY = 6;  
+	int dpx = 0.4/mMPPy; // sliding window width in x dir 
+
+	cv::Mat predicted, estimated;
+	cv::Mat_<float> measurement(1, 1); measurement(0) = 0;
+
+	lanePts.clear();
+	for (int iy = 0; iy < nDivY; ++iy)
+	{
+		// KF prediction
+		predicted = (left) ? mKFL->predict() : mKFR->predict();
+				
+		// measurement
+		int nPtMax=0; 
+		std::vector<float> xValues;
+		float measX= predicted.at<float>(0);
+		// y need to be reversed
+		int vStart = (ysize-1) - iy*(ysize / nDivY);
+		int vEnd = (ysize-1) - ((iy + 1)*(ysize / nDivY) - 1);
+		float measY = (vStart + vEnd) / 2;
+		for (int ix = 0; ix < xsize/2 - dpx; ++ix)
+		{
+			int uStart, uEnd;
+			if (left)
+			{
+				uStart = ix;
+				uEnd = ix + dpx;
+			}
+			else
+			{
+				uStart = ix + xsize/2;
+				uEnd = ix + dpx + xsize/2;
+			}
+			
+			cv::Mat ipts;
+			getPointsFromImage(gray, uStart, uEnd, vEnd, vStart, ipts);
+			if (ipts.rows > nPtMax)
+			{
+				nPtMax = ipts.rows;
+				cv::Scalar meanV = cv::mean(ipts);
+				measX = meanV.val[0];	
+				measY = meanV.val[1];
+			}
+		}
+		measurement(0) = measX;
+		
+		// KF update
+		estimated = (left)? mKFL->correct(measurement):
+			mKFR->correct(measurement);
+		cv::Point statePt(estimated.at<float>(0), measY);
+
+		//std::cout << "iy= " << iy << " measX= " << measX
+		//	<< " measY= " << measY <<" stateX= "<<statePt <<"\n";
+
+		lanePts.push_back(statePt);
+	}
+
+
+
+}
+
+void LaneDetector::getCamPtsFromGndImgPts(
+	const std::vector<cv::Point>& gndImgPts, 
+	std::vector<cv::Point>& camPts)
+{
+	camPts.clear();
+	for (size_t i = 0; i < gndImgPts.size(); ++i)
+	{
+		cv::Point pt;
+		int u = gndImgPts[i].x;
+		int v = gndImgPts[i].y;
+		if (u >= 0 && u < mLUT_u.cols &&
+			v >= 0 && v < mLUT_u.rows)
+		{
+			pt.x = mLUT_u.at<int>(v, u);
+			pt.y = mLUT_v.at<int>(v, u);
+			camPts.push_back(pt);
+		}
+	}
+}
+
+void LaneDetector::getFilteredLines(const cv::Mat & grayG, cv::Mat & lineG)
+{
+	cv::Mat gradX, gradY, absGradX, absGradY, edgeG;
+
+	// define kernels in x and y directions
+	cv::Mat kernelX = (cv::Mat_<double>(7, 1) << -0.04664411095,
+		-0.351327004776,
+		0.0,
+		0.865324982453,
+		0.0,
+		-0.351327004776,
+		-0.04664411095);
+	cv::Mat kernelY = (cv::Mat_<double>(5, 1) << 0.118364944627,
+		0.321749278106,
+		0.874605215994,
+		0.321749278106,
+		0.118364944627);
+
+	// sequentially filter the image
+	cv::sepFilter2D(grayG, edgeG, CV_64F, kernelX, kernelY);
+
+	// convert to abs scale
+	cv::convertScaleAbs(edgeG, lineG);
+
+	// get max value of the lineG
+	double min, max;
+	cv::minMaxLoc(lineG, &min, &max);
+
+	// thresholding remove values< 0.5 max
+	cv::threshold(lineG, lineG, max*0.5, 255, cv::THRESH_BINARY);
+}
+
+void LaneDetector::detectLane(const cv::Mat & src, 
+	cv::Mat &gndView, cv::Mat &gndMarker, cv::Mat &dst)
+{
 	// enhance constrast
 	cv::Mat srcEh = src.clone();
 	srcEh.forEach<cv::Point3_<uint8_t>>(changeConstrast());
@@ -347,146 +515,50 @@ void LaneDetector::detectLane(const cv::Mat & src, cv::Mat & dst, cv::Mat & dst1
 	cv::Mat grayG;
 	getGroundImage(grayCB, grayG);
 
-	// edge thresholding
-	cv::Mat gradX, gradY, absGradX, absGradY, edgeG;
-
-	//cv::Mat kernelX= cv::getGaussianKernel(3, 0.2);
-	cv::Mat kernelX = (cv::Mat_<double>(7, 1) << -0.04664411095,
-		-0.351327004776,
-		0.0,
-		0.865324982453,
-		0.0,
-		-0.351327004776,
-		-0.04664411095);
-	cv::Mat kernelY = (cv::Mat_<double>(5, 1) << 0.118364944627,
-		0.321749278106,
-		0.874605215994,
-		0.321749278106,
-		0.118364944627);
-
-	//std::cout << "kernelX= " << kernelX << "\n";
-	//std::cout << "kernelY= " << kernelY << "\n";
-
-	cv::sepFilter2D(grayG, edgeG, CV_64F, kernelX, kernelY);
-
-	cv::convertScaleAbs(edgeG, edgeG);
-	double min, max;
-	cv::minMaxLoc(edgeG, &min, &max);
-	cv::threshold(edgeG, edgeG, max*0.5, 255, cv::THRESH_BINARY);
-
-	// find inner edges
+	// edge thresholding using custom 2D filtering
+	cv::Mat lineG;
+	getFilteredLines(grayG, lineG);
+	
+	// find lanes
 	std::vector<cv::Point> lpts, rpts;
-	if (findInnerEdges(edgeG, lpts, rpts))
+	findLaneByKF(lineG, lpts, true);  // left lane
+	findLaneByKF(lineG, rpts, false); // irght lane
+
+	for (auto pp : lpts)
 	{
-		//  debugging codes
-		cv::Mat ptImgL = cv::Mat::zeros(grayG.size(), CV_8UC1);
-		cv::Mat ptImgR = cv::Mat::zeros(grayG.size(), CV_8UC1);
-		for (auto pp : rpts)
+		cv::circle(grayG, pp, 5, cv::Scalar(255));
+	}
+	for (auto pp : rpts)
+	{
+		cv::drawMarker(grayG, pp, cv::Scalar(255), cv::MARKER_CROSS,8);
+	}
+
+	// get lane points in camera image frame
+	std::vector<cv::Point> lpts_p, rpts_p;
+	getCamPtsFromGndImgPts(lpts, lpts_p);
+	getCamPtsFromGndImgPts(rpts, rpts_p);
+
+	// draw line
+	if (lpts_p.size() >= 2)
+	{
+		for (int i = 0; i < lpts_p.size() - 1; ++i)
 		{
-			cv::circle(ptImgR, pp, 3, cv::Scalar(255));
-			cv::circle(grayG, pp, 3, cv::Scalar(255));
+			cv::line(srcEh, lpts_p[i], lpts_p[i + 1],
+				cv::Scalar(0, 0, 255), 2);
 		}
-		for (auto pp : lpts)
+	}
+	if (rpts_p.size() >= 2)
+	{
+		for (int i = 0; i < rpts_p.size() - 1; ++i)
 		{
-			cv::circle(ptImgL, pp, 3, cv::Scalar(255));
-			cv::circle(grayG, pp, 5, cv::Scalar(255));
+			cv::line(srcEh, rpts_p[i], rpts_p[i + 1],
+				cv::Scalar(0, 255, 255), 2);
 		}
 	}
 
-	// find line
-	cv::Vec3d rline;
-	if (fitLine(rpts, rline))
-	{
-		cv::Point pt1, pt2;
-		pt1.y = 0; pt2.y = grayG.rows;
-		pt1.x = -rline[1] / rline[0] * pt1.y - rline[2] / rline[0];
-		pt2.x = -rline[1] / rline[0] * pt2.y - rline[2] / rline[0];
-
-		cv::line(grayG, pt1, pt2, cv::Scalar(255));
-	}
-
-	cv::Vec3d lline;
-	if (fitLine(lpts, lline))
-	{
-		cv::Point pt1, pt2;
-		pt1.y = 0; pt2.y = grayG.rows;
-		pt1.x = -lline[1] / lline[0] * pt1.y - lline[2] / lline[0];
-		pt2.x = -lline[1] / lline[0] * pt2.y - lline[2] / lline[0];
-
-		cv::line(grayG, pt1, pt2, cv::Scalar(255),2);
-	}
-
-	/*
-	// bound the image
-	cv::Mat maskBnd;
-	maskEdgeByPolygon(maskColor, maskBnd);
-
-
-	/* debugging codes
-	for (auto p : lpts)
-	{
-	std::cout << "left points: " << p << "\n";
-	}
-	for (auto p : rpts)
-	{
-	std::cout << "right points: " << p << "\n";
-	}*/
-
-	// hough lines
-	/*std::vector<cv::Vec4i> linesR, linesL;
-	std::vector<cv::Point> lptsHT, rptsHT;
-	cv::HoughLinesP(ptImgR, linesR, 10, CV_PI / 180, 50, 20, 10);
-	cv::HoughLinesP(ptImgL, linesL, 10, CV_PI / 180, 50, 20, 10);
-	for (size_t i = 0; i < linesR.size(); i++)
-	{
-	cv::Point pt1, pt2;
-	pt1.x = linesR[i][0];  pt1.y = linesR[i][1];
-	pt2.x = linesR[i][2];  pt2.y = linesR[i][3];
-	rptsHT.push_back(pt1);
-	rptsHT.push_back(pt2);
-	line(srcEh, pt1, pt2, cv::Scalar(0, 0, 255), 3, CV_AA);
-	}
-	for (size_t i = 0; i < linesL.size(); i++)
-	{
-	cv::Point pt1, pt2;
-	pt1.x = linesL[i][0];  pt1.y = linesL[i][1];
-	pt2.x = linesL[i][2];  pt2.y = linesL[i][3];
-	lptsHT.push_back(pt1);
-	lptsHT.push_back(pt2);
-	line(srcEh, pt1, pt2, cv::Scalar(0, 255, 255), 3, CV_AA);
-	}
-	*/
-
-	// coloring edge
-	//cv::Mat edgeC;
-	//cv::bitwise_and(src, src, edgeC, edgeB);
-
-	// color thresholding
-	//cv::Mat edgeMask;
-	//colorThresholding(edgeC, edgeMask);
-
-	/*if (lptsHT.size() > 1 && rptsHT.size() > 1)
-	{
-	cv::Vec4f lLine, rLine;
-	cv::fitLine(lptsHT, lLine, CV_DIST_L2, 0, 0.01, 0.01);
-	cv::fitLine(rptsHT, rLine, CV_DIST_L2, 0, 0.01, 0.01);
-
-	// get inner edges end points
-	cv::Point rp1, rp2, lp1, lp2;
-	getLineEndPoints(lLine, lptsHT, maskBnd.rows - 1, lp1, lp2);
-	getLineEndPoints(rLine, rptsHT, maskBnd.rows - 1, rp1, rp2);
-
-	// draw lines
-	cv::Mat edgeLine = cv::Mat::zeros(maskBnd.size(), CV_8UC3);
-	line(edgeLine, lp1, lp2, cv::Scalar(0, 0, 255), 10, 8);
-	line(edgeLine, rp1, rp2, cv::Scalar(0, 0, 255), 10, 8);
-
-	// blend
-	cv::addWeighted(edgeLine, 0.5, srcEh, 1.0, 0, dst);
-	}*/
-
-	dst = edgeG.clone();
-	dst1 = grayG.clone();
+	gndView = lineG.clone();
+	gndMarker = grayG.clone();
+	dst = srcEh.clone();
 }
 
 void LaneDetector::defineROI(const cv::Mat & gray, cv::Mat & dst)

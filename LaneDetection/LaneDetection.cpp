@@ -32,18 +32,24 @@ void testVideo(const std::string &fname)
 	
 	std::string winN = "Lane Detection";
 	cv::namedWindow(winN, cv::WINDOW_AUTOSIZE);
-	cv::Mat src, dst,dst1, tm_vp;
+	cv::Mat src;
+	cv::Mat gndView, gndMarker, dst;
 	int ct = 0;
 	while (cap.read(src))
 	{
 		if (ct == 0)
 		{
-			ld.constructPerspectiveMapping(src.size());
-			ld.constructLUT(src.size(), 400, 0.05, 0.025);
+			ld.constructPerspectiveMapping(src.size(),
+				0, 0, 1, 0, 2.2*CV_PI / 180, 0);
+			//ld.constructLUT(src.size(), 400, 0.05, 0.025);
+			ld.constructLUT(src.size(), 400, 0.15, 0.045);
+			//ld.constructLUT(src.size(), 400, 0.2, 0.06);
+			ld.initKF(ld.mXMap.size());
 		}
-		ld.detectLane(src,dst,dst1);
-		cv::imshow(winN, dst);
-		cv::imshow("test", dst1);
+		ld.detectLane(src,gndView,gndMarker,dst);
+		cv::imshow(winN, gndView);
+		cv::imshow("Markers", gndMarker);
+		cv::imshow("Overlay", dst);
 		int kc= cv::waitKey(0);
 		if (char(kc) == 'q')
 		{
@@ -58,7 +64,8 @@ void testVideo(const std::string &fname)
 int main()
 {
 	//testImage("./test_images/test2.jpg");
-	testVideo("./challenge_video.mp4");
+	//testVideo("./challenge_video.mp4");
+	testVideo("./project_video.mp4");
 
 	std::system("pause");
     return 0;
