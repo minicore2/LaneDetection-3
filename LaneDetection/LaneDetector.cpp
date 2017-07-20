@@ -373,13 +373,13 @@ void LaneDetector::getPointsFromImage(const cv::Mat & gray,
 	pts.copyTo(points);
 }
 
-void LaneDetector::findLaneByKF(const cv::Mat & gray, 
+void LaneDetector::findLaneByKF(const cv::Mat & gray,
 	std::vector<cv::Point> &lanePts, bool left)
 {
 	int xsize = gray.cols;
 	int ysize = gray.rows;
-	int nDivY = 6;  
-	int dpx = 0.4/mMPPy; // sliding window width in x dir 
+	int nDivY = 6;
+	int dpx = 0.4 / mMPPy; // sliding window width in x dir 
 
 	cv::Mat predicted, estimated;
 	cv::Mat_<float> measurement(1, 1); measurement(0) = 0;
@@ -389,16 +389,16 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 	{
 		// KF prediction
 		predicted = (left) ? mKFL->predict() : mKFR->predict();
-				
+
 		// measurement
-		int nPtMax=0; 
+		int nPtMax = 0;
 		std::vector<float> xValues;
-		float measX= predicted.at<float>(0);
+		float measX = predicted.at<float>(0);
 		// y need to be reversed
-		int vStart = (ysize-1) - iy*(ysize / nDivY);
-		int vEnd = (ysize-1) - ((iy + 1)*(ysize / nDivY) - 1);
+		int vStart = (ysize - 1) - iy*(ysize / nDivY);
+		int vEnd = (ysize - 1) - ((iy + 1)*(ysize / nDivY) - 1);
 		float measY = (vStart + vEnd) / 2;
-		for (int ix = 0; ix < xsize/2 - dpx; ++ix)
+		for (int ix = 0; ix < xsize / 2 - dpx; ++ix)
 		{
 			int uStart, uEnd;
 			if (left)
@@ -408,24 +408,24 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 			}
 			else
 			{
-				uStart = ix + xsize/2;
-				uEnd = ix + dpx + xsize/2;
+				uStart = ix + xsize / 2;
+				uEnd = ix + dpx + xsize / 2;
 			}
-			
+
 			cv::Mat ipts;
 			getPointsFromImage(gray, uStart, uEnd, vEnd, vStart, ipts);
 			if (ipts.rows > nPtMax)
 			{
 				nPtMax = ipts.rows;
 				cv::Scalar meanV = cv::mean(ipts);
-				measX = meanV.val[0];	
+				measX = meanV.val[0];
 				measY = meanV.val[1];
 			}
 		}
 		measurement(0) = measX;
-		
+
 		// KF update
-		estimated = (left)? mKFL->correct(measurement):
+		estimated = (left) ? mKFL->correct(measurement) :
 			mKFR->correct(measurement);
 		cv::Point statePt(estimated.at<float>(0), measY);
 
@@ -434,9 +434,6 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 
 		lanePts.push_back(statePt);
 	}
-
-
-
 }
 
 void LaneDetector::getCamPtsFromGndImgPts(
@@ -509,7 +506,7 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::bitwise_and(gray, gray, grayC, maskColor);
 
 	// bound
-	defineROI(grayC, bndGray);
+	cropToROI(grayC, bndGray);
 
 	// project to ground image
 	cv::Mat grayG;
@@ -562,7 +559,17 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	dst = srcEh.clone();
 }
 
-void LaneDetector::defineROI(const cv::Mat & gray, cv::Mat & dst)
+void LaneDetector::defineROI(double nyMin, double nyMax, double nxMin_top, double nxMax_top, double nxMin_bot, double nxMax_bot)
+{
+	mROI_yTop = nyMin;
+	mROI_yBot = nyMax;
+	mROI_xminTop = nxMin_top;
+	mROI_xmaxTop = nxMax_top;
+	mROI_xminBot = nxMin_bot;
+	mROI_xmaxBot = nxMax_bot;
+}
+
+void LaneDetector::cropToROI(const cv::Mat & gray, cv::Mat & dst)
 {
 	cv::Mat mask;
 	mask = cv::Mat::zeros(gray.size(), gray.type());
@@ -570,10 +577,10 @@ void LaneDetector::defineROI(const cv::Mat & gray, cv::Mat & dst)
 	cv::Point pts[1][4];
 	int cols = gray.cols;
 	int rows = gray.rows;
-	pts[0][0] = (cv::Point(cols*0.05, rows*0.9));
-	pts[0][1] = (cv::Point(cols*0.95, rows*0.9));
-	pts[0][2] = (cv::Point(cols*0.55, 0.55*rows));
-	pts[0][3] = (cv::Point(cols*0.45, 0.55*rows));
+	pts[0][0] = (cv::Point(cols*mROI_xminBot, rows*mROI_yBot));
+	pts[0][1] = (cv::Point(cols*mROI_xmaxBot, rows*mROI_yBot));
+	pts[0][2] = (cv::Point(cols*mROI_xmaxTop, rows*mROI_yTop));
+	pts[0][3] = (cv::Point(cols*mROI_xminTop, rows*mROI_yTop));
 
 	int npts[] = { 4 };
 	const cv::Point* ppt[1] = { pts[0] };

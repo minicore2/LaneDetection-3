@@ -35,8 +35,30 @@ public:
 		int width, double mppx, double mppy);
 
 	void initKF(cv::Size imgSize);
+
+	// define ROI boundary
+	// the ROI is in trapezoidal shape. 
+	//
+	//             xMin    xMax
+	// top(nyMin)   -------
+	// bot(nyMax  -----------
+	// @nyMin: normalized y min [0,1]
+	// @nyMax: normalized y max [0,1]
+	// @nxMin_top: normalized x min at top
+	// @nxMax_top: normalized x max at top
+	// @nxMin_bot: normalized x min at bot
+	// @nxMax_bot: normalized x max at bot
+	void defineROI(double nyMin, double nyMax,
+		double nxMin_top, double nxMax_top, 
+		double nxMin_bot, double nxMax_bot);
 	
 	// ========== Pipeline Fcns ==========================
+	
+	// crop to region of interest 
+	// used for the subsequent processing
+	// @gray: only take gray image
+	// @dst:: output image
+	void cropToROI(const cv::Mat &gray, cv::Mat &dst);
 
 	// parallel project camera image to ground image
 	// @src: camera image
@@ -57,7 +79,7 @@ public:
 
 	void getPointsFromImage(const cv::Mat &gray,
 		int uStart, int uEnd, int vStart, int vEnd,
-		cv::Mat &points);
+		cv::Mat &points);	
 
 	void findLaneByKF(const cv::Mat &gray,
 		std::vector<cv::Point> &lanePts, bool left);
@@ -70,12 +92,7 @@ public:
 		cv::Mat &dst);
 
 	// ============ Utility Fcns =======================
-
-	// define region of interest and this ROI will be 
-	// used for the subsequent processing
-	// @gray: only take gray image
-	static void defineROI(const cv::Mat &gray, cv::Mat &dst);
-
+	
 	// mask the lane color, return the pixel in the 
 	// color (white or yellow) range
 	static void colorThresholding(const cv::Mat &src, cv::Mat &maskOut);
@@ -95,6 +112,14 @@ public:
 	double mFocalY = 0.028;  
 	double mCCDX = 0.01586;
 	double mCCDY = 0.0132;
+
+	// ROI constants
+	double mROI_yTop= 0.55;
+	double mROI_yBot= 0.9;
+	double mROI_xminTop= 0.45;
+	double mROI_xmaxTop= 0.55;
+	double mROI_xminBot= 0.05;
+	double mROI_xmaxBot= 0.95;
 
 	// LUTs
 	double mMPPx;
