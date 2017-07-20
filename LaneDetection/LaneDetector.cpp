@@ -373,11 +373,213 @@ void LaneDetector::getPointsFromImage(const cv::Mat & gray,
 	pts.copyTo(points);
 }
 
-void LaneDetector::findLaneByKF(const cv::Mat & gray,
+void BezierSpline::computeAccumulativeLength(
+	const std::vector<cv::Point>& pts, std::vector<double> &sacc)
+{
+	size_t npt = pts.size();
+	double dx, dy, ds;
+	sacc.clear();
+	sacc.push_back(0);  // first point has zero length
+	for (size_t i = 1; i<npt; ++i)
+	{
+		dx = pts[i].x - pts[i - 1].x;
+		dy = pts[i].y - pts[i - 1].y;
+		ds = std::sqrt(dx*dx + dy*dy) + sacc[i - 1];
+		sacc.push_back(ds);
+	}
+}
+
+void BezierSpline::computeAccumulativeLength(const cv::Mat & pts, 
+	std::vector<double> &sacc)
+{
+	int npt = pts.rows;
+	double dx, dy, ds;
+	sacc.clear();
+	sacc.push_back(0);  // first point has zero length
+	for (int i = 1; i<npt; ++i)
+	{
+		dx = pts.at<double>(i,0) - pts.at<double>(i-1, 0);
+		dy = pts.at<double>(i,1) - pts.at<double>(i-1, 1);
+		ds = std::sqrt(dx*dx + dy*dy) + sacc[i - 1];
+		sacc.push_back(ds);
+	}
+}
+
+double BezierSpline::computeSplineCurveness()
+{
+	double curveness = 0;
+	int npt = Pmat.rows;
+	double dx1, dx2, dy1, dy2, ds1,ds2;
+	for (int i = 1; i < npt-1; i++)
+	{
+		dx1 = Pmat.at<double>(i, 0) - Pmat.at<double>(i - 1, 0);
+		dy1 = Pmat.at<double>(i, 1) - Pmat.at<double>(i - 1, 1);
+		dx2 = Pmat.at<double>(i+1, 0) - Pmat.at<double>(i, 0);
+		dy2 = Pmat.at<double>(i+1, 1) - Pmat.at<double>(i, 1);
+		ds1 = std::sqrt(dx1*dx1 + dy1*dy1);
+		ds2 = std::sqrt(dx2*dx2 + dy2*dy2);
+
+		double cth = (dx1*dx2 + dy1*dy2) / ds1 / ds2;
+		curveness += cth;
+	}
+	// normalize
+	curveness /= npt;
+	return curveness;
+}
+
+void BezierSpline::interpolatePts(int npts, 
+	std::vector<cv::Point>& pts)
+{
+	cv::Mat TmatTest;
+	constructSplineParameterMatrix(npts, TmatTest);
+	cv::Mat QmatTest;
+	QmatTest = (TmatTest*Mmat)*Pmat;
+
+	pts.clear();
+	for (int i = 0; i < QmatTest.rows; ++i)
+	{
+		cv::Point pt;
+		pt.x = QmatTest.at<double>(i, 0);
+		pt.y = QmatTest.at<double>(i, 1);
+		pts.push_back(pt);
+	}
+}
+
+bool BezierSpline::fitRANSACSpline(cv::Size imgSize,
+	const std::vector<cv::Point>& pts)
+{
+	int npt = pts.size();
+	if (npt < 6)
+	{
+		return false;
+	}
+	
+	// setup randomPts
+	std::vector<cv::Point> randomPts;
+	randomPts = pts;
+	
+	// prepare for loop
+	cv::Mat PmatMax;
+	int iter = 0, iterMax = 40;
+	double costMax = -1e20;
+	while (iter < iterMax)
+	{
+		// select random points
+		int nrpt= 4;
+		if (npt > 4)
+		{
+			nrpt = std::min(npt-1, 10);
+		}
+		std::random_shuffle(randomPts.begin(), randomPts.end());
+		
+		// sort by y descending
+		std::vector<cv::Point> rpts(randomPts.begin(), randomPts.begin() + nrpt);
+		std::sort(rpts.begin(), rpts.end(),
+			[](auto pt1, auto pt2) {return pt1.y > pt2.y;});
+
+		// fit now
+		if (!fit(rpts))
+		{
+			iter++;
+			continue;
+		}
+				
+		// cost function (long and less curvy)
+		// get points
+		std::vector<cv::Point> ipts;
+		interpolatePts(50, ipts);
+		
+		std::vector<double> saccTest;
+		computeAccumulativeLength(ipts, saccTest);
+		double curveLen = saccTest.back() / imgSize.height -1;
+		double curveness = computeSplineCurveness();
+
+		double cost = 1*curveLen + 1*curveness; // to maximize
+
+		if (cost > costMax)
+		{
+			costMax = cost;
+			for (int i = 0; i < Pmat.rows; ++i)
+			{
+				cv::Point pt;
+				pt.x = Pmat.at<double>(i, 0);
+				pt.y = Pmat.at<double>(i, 1);
+				PmatMax = Pmat.clone();
+			}
+		}
+
+		iter++;
+	}
+	// update control point matrix
+	PmatMax.copyTo(this->Pmat);	
+	if (Pmat.rows > 0)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+void LaneDetector::getVerticalScannedPoints(const cv::Mat & gray, 
+	int nDivX_2, int nDivY, 
+	std::vector<cv::Point> &pts, bool left)
+{
+	pts.clear();
+	int xsize = gray.cols;
+	int ysize = gray.rows;
+	int dpx = (xsize/2) / nDivX_2;
+	int dpy = ysize / nDivY;
+	int minPtCount = 5;
+		
+	for (int iy = 0; iy < nDivY; ++iy)
+	{
+		// y need to be reversed
+		int vStart = (ysize - 1) - iy*(dpy);
+		int vEnd = (ysize - 1) - ((iy + 1)*(dpy)-1);
+
+		float measY = (vStart + vEnd) / 2;
+		// loop left
+		int uStart, uEnd;
+		for (int ix = 0; ix < nDivX_2; ++ix)
+		{
+			if (left)
+			{
+				uStart = (xsize / 2 - 1) - ((ix + 1)*(dpx)-1);
+				uEnd = (xsize / 2 - 1) - ix*(dpx);
+			}
+			else
+			{
+				uStart = (xsize / 2) + ix*(dpx);
+				uEnd = (xsize / 2) + ((ix + 1)*(dpx))-1;
+			}
+			
+			if (ix == 24)
+			{
+				double haha = 0;
+			}
+			cv::Mat ipts;
+			getPointsFromImage(gray, uStart, uEnd, vEnd, vStart, ipts);
+			if (ipts.rows > minPtCount)
+			{
+				cv::Scalar meanV = cv::mean(ipts);
+				cv::Point pt;
+				pt.x = meanV.val[0];
+				pt.y = meanV.val[1];
+				pts.push_back(pt);
+				break;
+			}
+		}
+	}
+}
+
+void LaneDetector::findLaneByKFOld(const cv::Mat & gray,
 	std::vector<cv::Point> &lanePts, bool left)
 {
 	int xsize = gray.cols;
 	int ysize = gray.rows;
+
 	int nDivY = 6;
 	int dpx = 0.4 / mMPPy; // sliding window width in x dir 
 
@@ -435,6 +637,29 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 		lanePts.push_back(statePt);
 	}
 }
+
+void LaneDetector::findLaneByKF(const cv::Mat & gray,
+	std::vector<cv::Point> &lanePts, bool left)
+{
+	int xsize = gray.cols;
+	int ysize = gray.rows;
+
+	int nDivY = 30;
+	int dpx = 0.4 / mMPPy; // sliding window width in x dir
+	int nDivX_2 = (xsize / 2) / dpx;
+
+	cv::Mat predicted, estimated;
+	cv::Mat_<float> measurement(1, 1); measurement(0) = 0;
+
+	std::vector<cv::Point> vpts;
+	getVerticalScannedPoints(gray, nDivX_2, nDivY, vpts, left);
+	BezierSpline bsp;
+	if (bsp.fitRANSACSpline(gray.size(), vpts))
+	{
+		bsp.interpolatePts(30, lanePts);
+	}
+}
+
 
 void LaneDetector::getCamPtsFromGndImgPts(
 	const std::vector<cv::Point>& gndImgPts, 
@@ -672,4 +897,69 @@ bool LaneDetector::fitLine(const std::vector<cv::Point> pts, cv::Vec3d & line)
 	}
 	// create end points of the line
 	line[0] = aMin; line[1] = bMin, line[2] = cMin;
+}
+
+bool BezierSpline::fit(const std::vector<cv::Point>& pts)
+{
+	size_t npt = pts.size();
+	if (npt < 4)
+	{
+		return false;
+	}
+	// construct point matrix Q
+	cv::Mat Qmat(npt, 2, CV_64FC1);  // nx2 matrix
+	for (size_t i = 0; i< npt; ++i)
+	{
+		Qmat.at<double>(i, 0) = pts[i].x;
+		Qmat.at<double>(i, 1) = pts[i].y;
+	}
+
+	// construct parameter matrix T
+	cv::Mat Tmat;
+	constructSplineParameterMatrix(pts, Tmat);
+
+	// build T*M matrix
+	cv::Mat TMmat = Tmat*Mmat;
+
+	// solve using normal equation
+	cv::Mat mat1, mat12;  // control point matrix
+	mat1 = (TMmat.t())*TMmat;
+	mat12 = mat1.inv()*TMmat.t();
+	Pmat = mat12*Qmat;
+
+	return true;
+}
+
+void BezierSpline::constructSplineParameterMatrix(const std::vector<cv::Point>& pts, cv::Mat & Tmat)
+{
+	size_t npt = pts.size();
+	// construt original parameter matrix T
+	Tmat.create(npt, 4, CV_64FC1);
+	// calculate parameter t for each point
+	std::vector<double> sacc; // accumulated length
+	computeAccumulativeLength(pts, sacc);
+	double ssum = sacc.back();
+	for (int i = 0; i < npt; ++i)
+	{
+		double t = sacc[i] / ssum;
+		Tmat.at<double>(i, 0) = t*t*t;
+		Tmat.at<double>(i, 1) = t*t;
+		Tmat.at<double>(i, 2) = t;
+		Tmat.at<double>(i, 3) = 1;
+	}
+}
+
+void BezierSpline::constructSplineParameterMatrix(int npt, cv::Mat & Tmat)
+{
+	// construt original parameter matrix T
+	Tmat.create(npt, 4, CV_64FC1);
+
+	for (int i = 0; i < npt; ++i)
+	{
+		double t = double(i) / (npt - 1);
+		Tmat.at<double>(i, 0) = t*t*t;
+		Tmat.at<double>(i, 1) = t*t;
+		Tmat.at<double>(i, 2) = t;
+		Tmat.at<double>(i, 3) = 1;
+	}
 }

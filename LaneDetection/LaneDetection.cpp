@@ -46,6 +46,10 @@ void testVideo(const std::string &fname)
 			//ld.constructLUT(src.size(), 400, 0.2, 0.06);
 			ld.initKF(ld.mXMap.size());
 		}
+		if (ct == 6)
+		{
+			double haha = 1;
+		}
 		ld.detectLane(src,gndView,gndMarker,gndGray,bndGray,dst);
 		cv::imshow(winN, gndView);
 		cv::imshow("Markers", gndMarker);
@@ -61,7 +65,6 @@ void testVideo(const std::string &fname)
 	}
 	cv::destroyAllWindows();
 }
-
 
 int main()
 {

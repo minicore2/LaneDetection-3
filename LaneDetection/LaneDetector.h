@@ -14,6 +14,37 @@ struct changeConstrast
 	}
 };
 
+class BezierSpline
+{
+public:
+	BezierSpline() {
+		// construct Bezier matrix M
+		Mmat =
+			(cv::Mat_<double>(4, 4) << -1, 3, -3, 1, 3, -6, 3, 0, -3, 3, 0, 0, 1, 0, 0, 0);
+	};
+	~BezierSpline() {};
+
+	double computeSplineCurveness();
+	void interpolatePts(int npts, std::vector<cv::Point> &pts);
+	bool fit(const std::vector<cv::Point> &pts);
+	bool fitRANSACSpline(cv::Size imgSize, const std::vector<cv::Point> &pts);
+	
+	// utility functions
+	static void computeAccumulativeLength(const std::vector<cv::Point> &pts,
+		std::vector<double> &sacc);
+	static void computeAccumulativeLength(const cv::Mat &pts,
+		std::vector<double> &sacc);
+	static void constructSplineParameterMatrix(
+		const std::vector<cv::Point> &pts, cv::Mat &Tmat);
+	static void constructSplineParameterMatrix(
+		int npt, cv::Mat &Tmat);
+	
+	// properties
+	cv::Mat Mmat; // 4x4 bezier matrix
+	cv::Mat Pmat; // 4x2 control point matrix
+
+};
+
 
 class LaneDetector
 {
@@ -77,9 +108,19 @@ public:
 	bool groupPoints(const cv::Mat &gray,
 		std::vector<cv::Point> &lpts, std::vector<cv::Point> &rpts);
 
-	void getPointsFromImage(const cv::Mat &gray,
-		int uStart, int uEnd, int vStart, int vEnd,
-		cv::Mat &points);	
+	// get vertically scanned points closest to the centerline
+	// for either right or left side 
+	// @gray: input image in gray
+	// @nDivX_2: number of division in x for half image (left and right)
+	// @nDivY: number of division in y direction
+	// @pts: output scanned points for larger to smaller y
+	// @left: left(true) or right flag
+	void getVerticalScannedPoints(const cv::Mat &gray,
+		int nDivX_2, int nDivY, 
+		std::vector<cv::Point> &pts, bool left);
+
+	void findLaneByKFOld(const cv::Mat &gray,
+		std::vector<cv::Point> &lanePts, bool left);
 
 	void findLaneByKF(const cv::Mat &gray,
 		std::vector<cv::Point> &lanePts, bool left);
@@ -103,6 +144,11 @@ public:
 	// ax+by+c=0
 	static bool fitLine(const std::vector<cv::Point> pts, 
 		cv::Vec3d &line);
+
+	static void getPointsFromImage(const cv::Mat &gray,
+		int uStart, int uEnd, int vStart, int vEnd,
+		cv::Mat &points);
+
 
 	// ============ Properties =================================
 	cv::Mat mTM_vp; // transformation from vehicle to pixel frame
