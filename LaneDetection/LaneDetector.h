@@ -66,7 +66,8 @@ public:
 		std::vector<cv::Point> &camPts);
 
 	void detectLane(const cv::Mat &src, cv::Mat &gndView,
-		cv::Mat &gndMarker, cv::Mat &dst);
+		cv::Mat &gndMarker, cv::Mat &gndGray, cv::Mat &bndGray,
+		cv::Mat &dst);
 
 	// ============ Utility Fcns =======================
 

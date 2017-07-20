@@ -492,7 +492,8 @@ void LaneDetector::getFilteredLines(const cv::Mat & grayG, cv::Mat & lineG)
 }
 
 void LaneDetector::detectLane(const cv::Mat & src, 
-	cv::Mat &gndView, cv::Mat &gndMarker, cv::Mat &dst)
+	cv::Mat &gndView, cv::Mat &gndMarker, cv::Mat &gndGray,
+	cv::Mat &bndGray, cv::Mat &dst)
 {
 	// enhance constrast
 	cv::Mat srcEh = src.clone();
@@ -508,12 +509,12 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::bitwise_and(gray, gray, grayC, maskColor);
 
 	// bound
-	cv::Mat grayCB;
-	defineROI(grayC, grayCB);
+	defineROI(grayC, bndGray);
 
 	// project to ground image
 	cv::Mat grayG;
-	getGroundImage(grayCB, grayG);
+	getGroundImage(bndGray, grayG);
+	getGroundImage(gray, gndGray);
 
 	// edge thresholding using custom 2D filtering
 	cv::Mat lineG;
@@ -571,8 +572,8 @@ void LaneDetector::defineROI(const cv::Mat & gray, cv::Mat & dst)
 	int rows = gray.rows;
 	pts[0][0] = (cv::Point(cols*0.05, rows*0.9));
 	pts[0][1] = (cv::Point(cols*0.95, rows*0.9));
-	pts[0][2] = (cv::Point(cols*0.55, 0.65*rows));
-	pts[0][3] = (cv::Point(cols*0.45, 0.65*rows));
+	pts[0][2] = (cv::Point(cols*0.55, 0.55*rows));
+	pts[0][3] = (cv::Point(cols*0.45, 0.55*rows));
 
 	int npts[] = { 4 };
 	const cv::Point* ppt[1] = { pts[0] };

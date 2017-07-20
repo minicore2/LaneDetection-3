@@ -33,7 +33,7 @@ void testVideo(const std::string &fname)
 	std::string winN = "Lane Detection";
 	cv::namedWindow(winN, cv::WINDOW_AUTOSIZE);
 	cv::Mat src;
-	cv::Mat gndView, gndMarker, dst;
+	cv::Mat gndView, gndMarker, gndGray, bndGray, dst;
 	int ct = 0;
 	while (cap.read(src))
 	{
@@ -46,9 +46,11 @@ void testVideo(const std::string &fname)
 			//ld.constructLUT(src.size(), 400, 0.2, 0.06);
 			ld.initKF(ld.mXMap.size());
 		}
-		ld.detectLane(src,gndView,gndMarker,dst);
+		ld.detectLane(src,gndView,gndMarker,gndGray,bndGray,dst);
 		cv::imshow(winN, gndView);
 		cv::imshow("Markers", gndMarker);
+		cv::imshow("Ground", gndGray);
+		cv::imshow("Bound", bndGray);
 		cv::imshow("Overlay", dst);
 		int kc= cv::waitKey(0);
 		if (char(kc) == 'q')
