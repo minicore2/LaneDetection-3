@@ -29,6 +29,7 @@ void testVideo(const std::string &fname)
 	cap.open(fname);
 
 	LaneDetector ld;
+	ld.defineROI(0.6, 0.95, 0.45, 0.55, 0.1, 0.9); // hard video
 	
 	std::string winN = "Lane Detection";
 	cv::namedWindow(winN, cv::WINDOW_AUTOSIZE);
@@ -39,11 +40,18 @@ void testVideo(const std::string &fname)
 	{
 		if (ct == 0)
 		{
+			// normal video settings
 			ld.constructPerspectiveMapping(src.size(),
-				0, 0, 1, 0, 2.2*CV_PI / 180, 0);
-			//ld.constructLUT(src.size(), 400, 0.05, 0.025);
-			ld.constructLUT(src.size(), 400, 0.15, 0.045);
-			//ld.constructLUT(src.size(), 400, 0.2, 0.06);
+		    		0, 0, 1, 0, 2.2*CV_PI / 180, 0); 
+			ld.constructLUT(src.size(), 400, 0.15, 0.045); 
+			
+			
+			// hard video settings
+			/*ld.constructPerspectiveMapping(src.size(),
+				0, 0, 1, 0, 3*CV_PI / 180, 0);
+			ld.constructLUT(src.size(), 400, 0.2, 0.05);  // hard video
+			*/
+
 			ld.initKF(ld.mXMap.size());
 		}
 		if (ct == 6)

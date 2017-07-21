@@ -173,10 +173,12 @@ void LaneDetector::constructLUT(cv::Size imgSize,
 
 void LaneDetector::initKF(cv::Size imgSize)
 {
-	// for left
+	// -----for left-----
+	prevMeasL = cv::Mat::zeros(8, 1, CV_32FC1);
 	mKFL->transitionMatrix = cv::Mat::eye(16, 16, CV_32FC1);
+	// speed part
 	cv::Rect roi(8,0,8,8);
-	mKFL->transitionMatrix(roi)= cv::Mat::eye(8, 8, CV_32FC1);
+	mKFL->transitionMatrix(roi)= 1*cv::Mat::eye(8, 8, CV_32FC1);
 
 	for (int i = 0; i < 16; ++i)
 	{
@@ -187,9 +189,11 @@ void LaneDetector::initKF(cv::Size imgSize)
 	cv::setIdentity(mKFL->measurementNoiseCov, cv::Scalar::all(20));
 	cv::setIdentity(mKFL->errorCovPost, cv::Scalar::all(0.1));
 
-	// for right
+	// -----for right------
+	prevMeasR = cv::Mat::zeros(8, 1, CV_32FC1);
 	mKFR->transitionMatrix = cv::Mat::eye(16, 16, CV_32FC1);
-	mKFR->transitionMatrix(roi) = cv::Mat::eye(8, 8, CV_32FC1);
+	// speed part
+	mKFR->transitionMatrix(roi) = 1*cv::Mat::eye(8, 8, CV_32FC1);
 
 	for (int i = 0; i < 16; ++i)
 	{
@@ -469,16 +473,13 @@ bool BezierSpline::fitRANSACSpline(cv::Size imgSize,
 	
 	// prepare for loop
 	cv::Mat PmatMax;
-	int iter = 0, iterMax = 40;
+	int iter = 0, iterMax = 50;
 	double costMax = -1e20;
 	while (iter < iterMax)
 	{
 		// select random points
-		int nrpt= 4;
-		if (npt > 4)
-		{
-			nrpt = std::min(npt-1, 10);
-		}
+		int nrpt= 5;
+		
 		std::random_shuffle(randomPts.begin(), randomPts.end());
 		
 		// sort by y descending
@@ -547,8 +548,7 @@ void LaneDetector::getVerticalScannedPoints(const cv::Mat & gray,
 		// y need to be reversed
 		int vStart = (ysize - 1) - iy*(dpy);
 		int vEnd = (ysize - 1) - ((iy + 1)*(dpy)-1);
-
-		float measY = (vStart + vEnd) / 2;
+				
 		// loop left
 		int uStart, uEnd;
 		for (int ix = 0; ix < nDivX_2; ++ix)
@@ -658,7 +658,10 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 	int nDivX_2 = (xsize / 2) / dpx;
 
 	cv::Mat predicted, estimated;
-	cv::Mat measurement= cv::Mat::zeros(8, 1, CV_32FC1);
+	cv::Mat measurement= (left)? prevMeasL.clone():prevMeasR.clone();
+
+	//std::cout << "prevMeasL= " << prevMeasL << "\n";
+	//std::cout << "prevMeasR= " << prevMeasL << "\n";
 
 	// KF prediction
 	predicted = (left) ? mKFL->predict() : mKFR->predict();
@@ -667,8 +670,9 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 	std::vector<cv::Point> vpts;
 	getVerticalScannedPoints(gray, nDivX_2, nDivY, vpts, left);
 	BezierSpline bsp;
+		
 	bsp.fitRANSACSpline(gray.size(), vpts);
-	std::cout << "Pmat= " << bsp.Pmat << "\n";
+	//std::cout << "Pmat= " << bsp.Pmat << "\n";
 	int nCtrlPt = bsp.Pmat.rows;
 	if (nCtrlPt >0)
 	{
@@ -679,7 +683,17 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 		}
 	}
 	
-	std::cout << "meas= " << measurement << "\n";
+	//std::cout << "meas= " << measurement << "\n";
+	// store measurement
+	if (left)
+	{
+		measurement.copyTo(prevMeasL);
+	}
+	else
+	{
+		measurement.copyTo(prevMeasR);
+	}
+
 	// KF update
 	estimated = (left) ? mKFL->correct(measurement) :
 		mKFR->correct(measurement);
@@ -690,9 +704,9 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 		ctrlMat.at<double>(i, 0) = double(estimated.at<float>(2 * i));
 		ctrlMat.at<double>(i, 1) = double(estimated.at<float>(2 * i + 1));
 	}
-	std::cout << "ctrlMAt= " << ctrlMat << "\n";
+	//std::cout << "ctrlMAt= " << ctrlMat << "\n";
 	bsp.Pmat = ctrlMat.clone();
-	bsp.interpolatePts(30, lanePts);
+	bsp.interpolatePts(20, lanePts);
 
 }
 
@@ -781,7 +795,7 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	// find lanes
 	std::vector<cv::Point> lpts, rpts;
 	findLaneByKF(lineG, lpts, true);  // left lane
-	findLaneByKF(lineG, rpts, false); // irght lane
+	findLaneByKF(lineG, rpts, false); // right lane
 
 	for (auto pp : lpts)
 	{
@@ -803,7 +817,7 @@ void LaneDetector::detectLane(const cv::Mat & src,
 		for (int i = 0; i < lpts_p.size() - 1; ++i)
 		{
 			cv::line(srcEh, lpts_p[i], lpts_p[i + 1],
-				cv::Scalar(0, 0, 255), 2);
+				cv::Scalar(0, 0, 255), 5);
 		}
 	}
 	if (rpts_p.size() >= 2)
@@ -811,7 +825,7 @@ void LaneDetector::detectLane(const cv::Mat & src,
 		for (int i = 0; i < rpts_p.size() - 1; ++i)
 		{
 			cv::line(srcEh, rpts_p[i], rpts_p[i + 1],
-				cv::Scalar(0, 255, 255), 2);
+				cv::Scalar(0, 255, 255), 5);
 		}
 	}
 

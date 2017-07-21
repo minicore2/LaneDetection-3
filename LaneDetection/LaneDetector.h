@@ -83,7 +83,7 @@ public:
 		double nxMin_top, double nxMax_top, 
 		double nxMin_bot, double nxMax_bot);
 	
-	// ========== Pipeline Fcns ==========================
+	// ========== Pipeline Fcns =====================
 	
 	// crop to region of interest 
 	// used for the subsequent processing
@@ -176,6 +176,8 @@ public:
 	// kalman filters
 	cv::KalmanFilter *mKFL;
 	cv::KalmanFilter *mKFR;
+	cv::Mat prevMeasL;
+	cv::Mat prevMeasR;
 };
 
 
