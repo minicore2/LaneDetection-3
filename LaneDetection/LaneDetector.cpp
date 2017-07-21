@@ -374,7 +374,7 @@ void LaneDetector::getPointsFromImage(const cv::Mat & gray,
 	{
 		for (int j = uStart; j <=uEnd; ++j)
 		{
-			if (gray.at<uchar>(i, j) > 200)
+			if (gray.at<uchar>(i, j) > 100)
 			{
 				cv::Vec2f pt;
 				pt[0]= j;
@@ -505,8 +505,8 @@ bool BezierSpline::fitRANSACSpline(cv::Size imgSize,
 		double curveness = computeSplineCurveness();
 
 		double cost = 1*curveLen + 1*curveness; // to maximize
-
-		if (cost > costMax)
+		//std::cout << "curveness= " << curveness << "\n";
+		if (cost > costMax && curveness >0.4 )
 		{
 			costMax = cost;
 			for (int i = 0; i < Pmat.rows; ++i)
@@ -541,7 +541,7 @@ void LaneDetector::getVerticalScannedPoints(const cv::Mat & gray,
 	int ysize = gray.rows;
 	int dpx = (xsize/2) / nDivX_2;
 	int dpy = ysize / nDivY;
-	int minPtCount = 5;
+	int minPtCount = 1;
 		
 	for (int iy = 0; iy < nDivY; ++iy)
 	{
@@ -564,13 +564,9 @@ void LaneDetector::getVerticalScannedPoints(const cv::Mat & gray,
 				uEnd = (xsize / 2) + ((ix + 1)*(dpx))-1;
 			}
 			
-			if (ix == 24)
-			{
-				double haha = 0;
-			}
 			cv::Mat ipts;
 			getPointsFromImage(gray, uStart, uEnd, vEnd, vStart, ipts);
-			if (ipts.rows > minPtCount)
+			if (ipts.rows >= minPtCount)
 			{
 				cv::Scalar meanV = cv::mean(ipts);
 				cv::Point pt;
@@ -670,7 +666,7 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 	std::vector<cv::Point> vpts;
 	getVerticalScannedPoints(gray, nDivX_2, nDivY, vpts, left);
 	BezierSpline bsp;
-		
+	
 	bsp.fitRANSACSpline(gray.size(), vpts);
 	//std::cout << "Pmat= " << bsp.Pmat << "\n";
 	int nCtrlPt = bsp.Pmat.rows;
@@ -872,7 +868,9 @@ void LaneDetector::colorThresholding(const cv::Mat & src, cv::Mat & maskOut)
 	// color thresholding
 	cv::Scalar lby(14, 178, 127); // yellow
 	cv::Scalar uby(57, 255, 255);
-	cv::Scalar lbw(0, 0, 200); // white
+	
+	//cv::Scalar lbw(0, 0, 200); // white
+	cv::Scalar lbw(0, 0, 150); // white
 	cv::Scalar ubw(255, 255, 255);
 	
 	cv::Mat edgeY, edgeW;//, edgeG;
