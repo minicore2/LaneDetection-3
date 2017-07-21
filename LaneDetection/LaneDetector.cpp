@@ -100,8 +100,8 @@ void getGroundImageFromVC(const cv::Mat &src, const cv::Mat &tm_vp,
 
 LaneDetector::LaneDetector()
 {
-	mKFL = new cv::KalmanFilter(2, 1, 0);
-	mKFR = new cv::KalmanFilter(2, 1, 0);
+	mKFL = new cv::KalmanFilter(16, 8, 0);
+	mKFR = new cv::KalmanFilter(16, 8, 0);
 }
 
 LaneDetector::~LaneDetector()
@@ -174,18 +174,27 @@ void LaneDetector::constructLUT(cv::Size imgSize,
 void LaneDetector::initKF(cv::Size imgSize)
 {
 	// for left
-	mKFL->transitionMatrix =(cv::Mat_<float>(2, 2) << 1, 1, 0, 1);
-	mKFL->statePre.at<float>(0) = imgSize.width/2 - 2/mMPPy;
-	mKFL->statePre.at<float>(1) = 0;
+	mKFL->transitionMatrix = cv::Mat::eye(16, 16, CV_32FC1);
+	cv::Rect roi(8,0,8,8);
+	mKFL->transitionMatrix(roi)= cv::Mat::eye(8, 8, CV_32FC1);
+
+	for (int i = 0; i < 16; ++i)
+	{
+		mKFL->statePre.at<float>(i) = 0;
+	}	
 	cv::setIdentity(mKFL->measurementMatrix);
 	cv::setIdentity(mKFL->processNoiseCov, cv::Scalar::all(1e-4));
 	cv::setIdentity(mKFL->measurementNoiseCov, cv::Scalar::all(20));
 	cv::setIdentity(mKFL->errorCovPost, cv::Scalar::all(0.1));
 
 	// for right
-	mKFR->transitionMatrix = (cv::Mat_<float>(2, 2) << 1, 1, 0, 1);
-	mKFR->statePre.at<float>(0) = imgSize.width / 2 + 2 / mMPPy;
-	mKFR->statePre.at<float>(1) = 0;
+	mKFR->transitionMatrix = cv::Mat::eye(16, 16, CV_32FC1);
+	mKFR->transitionMatrix(roi) = cv::Mat::eye(8, 8, CV_32FC1);
+
+	for (int i = 0; i < 16; ++i)
+	{
+		mKFR->statePre.at<float>(i) = 0;
+	}
 	cv::setIdentity(mKFR->measurementMatrix);
 	cv::setIdentity(mKFR->processNoiseCov, cv::Scalar::all(1e-4));
 	cv::setIdentity(mKFR->measurementNoiseCov, cv::Scalar::all(20));
@@ -649,15 +658,42 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 	int nDivX_2 = (xsize / 2) / dpx;
 
 	cv::Mat predicted, estimated;
-	cv::Mat_<float> measurement(1, 1); measurement(0) = 0;
+	cv::Mat measurement= cv::Mat::zeros(8, 1, CV_32FC1);
 
+	// KF prediction
+	predicted = (left) ? mKFL->predict() : mKFR->predict();
+
+	// measure
 	std::vector<cv::Point> vpts;
 	getVerticalScannedPoints(gray, nDivX_2, nDivY, vpts, left);
 	BezierSpline bsp;
-	if (bsp.fitRANSACSpline(gray.size(), vpts))
+	bsp.fitRANSACSpline(gray.size(), vpts);
+	std::cout << "Pmat= " << bsp.Pmat << "\n";
+	int nCtrlPt = bsp.Pmat.rows;
+	if (nCtrlPt >0)
 	{
-		bsp.interpolatePts(30, lanePts);
+		for (int i = 0; i < nCtrlPt; ++i)
+		{
+			measurement.at<float>(2 * i, 0) = float(bsp.Pmat.at<double>(i, 0));
+			measurement.at<float>(2 * i+1, 0) = float(bsp.Pmat.at<double>(i, 1));
+		}
 	}
+	
+	std::cout << "meas= " << measurement << "\n";
+	// KF update
+	estimated = (left) ? mKFL->correct(measurement) :
+		mKFR->correct(measurement);
+	// update bsp
+	cv::Mat ctrlMat(4,2,CV_64FC1);
+	for (int i = 0; i < 4; ++i)
+	{
+		ctrlMat.at<double>(i, 0) = double(estimated.at<float>(2 * i));
+		ctrlMat.at<double>(i, 1) = double(estimated.at<float>(2 * i + 1));
+	}
+	std::cout << "ctrlMAt= " << ctrlMat << "\n";
+	bsp.Pmat = ctrlMat.clone();
+	bsp.interpolatePts(30, lanePts);
+
 }
 
 
