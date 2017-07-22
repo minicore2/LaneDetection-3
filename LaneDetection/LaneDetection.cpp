@@ -74,11 +74,28 @@ void testVideo(const std::string &fname)
 	cv::destroyAllWindows();
 }
 
+void testAutoConstrast(const std::string &fname)
+{
+	cv::Mat src, dst;
+	src = cv::imread(fname);
+
+	LaneDetector::autoContrast(src, dst);
+
+	cv::imshow("Original Image", src);
+	cv::imshow("Balanced Image", dst);
+	int ck = cv::waitKey(0);
+	if (char(ck) == 'q')
+	{
+		cv::destroyAllWindows();
+	}
+}
+
 int main()
 {
 	//testImage("./test_images/test2.jpg");
 	//testVideo("./challenge_video.mp4");
-	testVideo("./project_video.mp4");
+	//testVideo("./project_video.mp4");
+	testAutoConstrast("./test_images/test2.jpg");
 
 	std::system("pause");
     return 0;

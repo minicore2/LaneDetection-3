@@ -386,6 +386,19 @@ void LaneDetector::getPointsFromImage(const cv::Mat & gray,
 	pts.copyTo(points);
 }
 
+void LaneDetector::autoContrast(const cv::Mat & gray, cv::Mat & grayAuto)
+{
+	CV_Assert(gray.type() == CV_8UC1);
+
+	double minVal, maxVal;
+	cv::minMaxLoc(gray, &minVal, &maxVal);
+	double rangeIn = maxVal - minVal;
+	int intensityMax = 255;
+	double alpha = intensityMax / rangeIn;
+	double beta = -minVal*alpha;
+	gray.convertTo(grayAuto, -1, alpha, beta);  // using saturate_cast
+}
+
 void BezierSpline::computeAccumulativeLength(
 	const std::vector<cv::Point>& pts, std::vector<double> &sacc)
 {
