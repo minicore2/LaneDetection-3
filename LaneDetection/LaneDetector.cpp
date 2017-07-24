@@ -374,7 +374,7 @@ void LaneDetector::getPointsFromImage(const cv::Mat & gray,
 	{
 		for (int j = uStart; j <=uEnd; ++j)
 		{
-			if (gray.at<uchar>(i, j) > 230)
+			if (gray.at<uchar>(i, j) > 200)
 			{
 				cv::Vec2f pt;
 				pt[0]= j;
@@ -745,6 +745,7 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 	BezierSpline bsp;
 	
 	bsp.fitRANSACSpline(gray.size(), vpts);
+	
 	//std::cout << "Pmat= " << bsp.Pmat << "\n";
 	int nCtrlPt = bsp.Pmat.rows;
 	if (nCtrlPt >0)
@@ -753,6 +754,27 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 		{
 			measurement.at<float>(2 * i, 0) = float(bsp.Pmat.at<double>(i, 0));
 			measurement.at<float>(2 * i+1, 0) = float(bsp.Pmat.at<double>(i, 1));
+		}
+		// good fit
+		if (left)
+		{
+			mKFL_missCt = 0;
+		}
+		else
+		{
+			mKFR_missCt = 0;
+		}
+	}
+	else
+	{
+		// bad fit
+		if (left)
+		{
+			mKFL_missCt ++;
+		}
+		else
+		{
+			mKFR_missCt ++;
 		}
 	}
 	
@@ -779,8 +801,12 @@ void LaneDetector::findLaneByKF(const cv::Mat & gray,
 	}
 	//std::cout << "ctrlMAt= " << ctrlMat << "\n";
 	bsp.Pmat = ctrlMat.clone();
-	bsp.interpolatePts(20, lanePts);
-
+	lanePts.clear();
+	if ((left && mKFL_missCt <= 5) ||
+		(!left && mKFR_missCt<=5))
+	{
+		bsp.interpolatePts(20, lanePts);
+	}
 }
 
 
@@ -837,30 +863,28 @@ void LaneDetector::getFilteredLines(const cv::Mat & grayG, cv::Mat & lineG)
 }
 
 void LaneDetector::detectLane(const cv::Mat & src, 
-	cv::Mat &gndView, cv::Mat &gndMarker, cv::Mat &gndGray,
-	cv::Mat &bndGray, cv::Mat &dst)
+	cv::Mat &srcBnd, cv::Mat &gndGray, 
+	cv::Mat &gndView, cv::Mat &gndMarker, 
+	cv::Mat &dst, 
+	std::vector<cv::Point> lpts, std::vector<cv::Point> rpts)
 {
 	// enhance constrast
-	//cv::Mat srcEh = src.clone();
-	//srcEh.forEach<cv::Point3_<uint8_t>>(changeConstrast());
-	cv::Mat srcEh;
-	autoContrast(src, srcEh,2);
+	cv::Mat srcEh = src.clone();
+	cropToROI(src, srcBnd);
+	autoContrast(srcBnd, srcBnd,0);
 	
 	// color thresholding
 	cv::Mat maskColor;
-	colorThresholding(srcEh, maskColor);
+	colorThresholding(srcBnd, maskColor);
 
 	// gray
 	cv::Mat gray, grayC;
-	cv::cvtColor(srcEh, gray, cv::COLOR_BGR2GRAY);
+	cv::cvtColor(srcBnd, gray, cv::COLOR_BGR2GRAY);
 	cv::bitwise_and(gray, gray, grayC, maskColor);
-	
-	// bound
-	cropToROI(grayC, bndGray);
 	
 	// project to ground image
 	cv::Mat grayG;
-	getGroundImage(bndGray, grayG);
+	getGroundImage(grayC, grayG);
 	getGroundImage(gray, gndGray);
 
 	cv::equalizeHist(grayG, grayG);
@@ -869,8 +893,7 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::Mat lineG;
 	getFilteredLines(grayG, lineG);
 	
-	// find lanes
-	std::vector<cv::Point> lpts, rpts;
+	// find lanes and return points in vehicle frame
 	findLaneByKF(lineG, lpts, true);  // left lane
 	findLaneByKF(lineG, rpts, false); // right lane
 
@@ -921,14 +944,14 @@ void LaneDetector::defineROI(double nyMin, double nyMax, double nxMin_top, doubl
 	mROI_xmaxBot = nxMax_bot;
 }
 
-void LaneDetector::cropToROI(const cv::Mat & gray, cv::Mat & dst)
+void LaneDetector::cropToROI(const cv::Mat & img, cv::Mat & dst)
 {
 	cv::Mat mask;
-	mask = cv::Mat::zeros(gray.size(), gray.type());
+	mask = cv::Mat::zeros(img.size(), CV_8UC1);
 
 	cv::Point pts[1][4];
-	int cols = gray.cols;
-	int rows = gray.rows;
+	int cols = img.cols;
+	int rows = img.rows;
 	pts[0][0] = (cv::Point(cols*mROI_xminBot, rows*mROI_yBot));
 	pts[0][1] = (cv::Point(cols*mROI_xmaxBot, rows*mROI_yBot));
 	pts[0][2] = (cv::Point(cols*mROI_xmaxTop, rows*mROI_yTop));
@@ -936,8 +959,9 @@ void LaneDetector::cropToROI(const cv::Mat & gray, cv::Mat & dst)
 
 	int npts[] = { 4 };
 	const cv::Point* ppt[1] = { pts[0] };
+	
 	cv::fillPoly(mask, ppt, npts, 1, cv::Scalar(255));
-	cv::bitwise_and(gray, gray, dst, mask);
+	cv::bitwise_and(img, img, dst, mask);
 }
 
 void LaneDetector::colorThresholding(const cv::Mat & src, cv::Mat & maskOut)

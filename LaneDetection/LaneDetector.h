@@ -128,9 +128,20 @@ public:
 	void getCamPtsFromGndImgPts(const std::vector<cv::Point> &gndImgPts,
 		std::vector<cv::Point> &camPts);
 
-	void detectLane(const cv::Mat &src, cv::Mat &gndView,
-		cv::Mat &gndMarker, cv::Mat &gndGray, cv::Mat &bndGray,
-		cv::Mat &dst);
+	// detect left and right lane
+	// @src: input image
+	// @srcBnd: bounded input image
+	// @gndGray: ground gray scale view
+	// @gndView: ground view with lines
+	// @gndMarker: ground lines with detected markers
+	// @dst: overlay output image
+	// @lpts: left lane detected points in vehicle frame
+	// @rpts: right lane detected points in vehicle frame
+	void detectLane(const cv::Mat & src,
+		cv::Mat &srcBnd, cv::Mat &gndGray,
+		cv::Mat &gndView, cv::Mat &gndMarker,
+		cv::Mat &dst,
+		std::vector<cv::Point> lpts, std::vector<cv::Point> rpts);
 
 	// ============ Utility Fcns =======================
 	
@@ -180,6 +191,8 @@ public:
 	cv::KalmanFilter *mKFR;
 	cv::Mat prevMeasL;
 	cv::Mat prevMeasR;
+	int mKFL_missCt = 0;
+	int mKFR_missCt = 0;
 };
 
 
