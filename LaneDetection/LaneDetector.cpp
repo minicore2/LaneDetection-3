@@ -374,7 +374,7 @@ void LaneDetector::getPointsFromImage(const cv::Mat & gray,
 	{
 		for (int j = uStart; j <=uEnd; ++j)
 		{
-			if (gray.at<uchar>(i, j) > 200)
+			if (gray.at<uchar>(i, j) > 230)
 			{
 				cv::Vec2f pt;
 				pt[0]= j;
@@ -855,15 +855,15 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::cvtColor(srcEh, gray, cv::COLOR_BGR2GRAY);
 	cv::bitwise_and(gray, gray, grayC, maskColor);
 	
-
 	// bound
 	cropToROI(grayC, bndGray);
-	cv::equalizeHist(bndGray, bndGray);
-
+	
 	// project to ground image
 	cv::Mat grayG;
 	getGroundImage(bndGray, grayG);
 	getGroundImage(gray, gndGray);
+
+	cv::equalizeHist(grayG, grayG);
 
 	// edge thresholding using custom 2D filtering
 	cv::Mat lineG;
