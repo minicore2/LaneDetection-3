@@ -49,7 +49,7 @@ void testVideo(const std::string &fname)
 			// hard video settings
 			/*ld.constructPerspectiveMapping(src.size(),
 				0, 0, 1, 0, 3*CV_PI / 180, 0);
-			ld.constructLUT(src.size(), 400, 0.2, 0.05);  // hard video
+			ld.constructLUT(src.size(), 400, 0.15, 0.03);  // hard video
 			*/
 
 			ld.initKF(ld.mXMap.size());
@@ -76,9 +76,9 @@ void testVideo(const std::string &fname)
 
 void testAutoConstrast(const std::string &fname)
 {
-	cv::Mat src, dst;
+	cv::Mat src,gray, dst;
 	src = cv::imread(fname);
-
+	cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
 	LaneDetector::autoContrast(src, dst);
 
 	cv::imshow("Original Image", src);
@@ -94,8 +94,8 @@ int main()
 {
 	//testImage("./test_images/test2.jpg");
 	//testVideo("./challenge_video.mp4");
-	//testVideo("./project_video.mp4");
-	testAutoConstrast("./test_images/test2.jpg");
+	testVideo("./project_video.mp4");
+	//testAutoConstrast("./test_images/test2.jpg");
 
 	std::system("pause");
     return 0;

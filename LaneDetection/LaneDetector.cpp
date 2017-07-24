@@ -374,7 +374,7 @@ void LaneDetector::getPointsFromImage(const cv::Mat & gray,
 	{
 		for (int j = uStart; j <=uEnd; ++j)
 		{
-			if (gray.at<uchar>(i, j) > 100)
+			if (gray.at<uchar>(i, j) > 200)
 			{
 				cv::Vec2f pt;
 				pt[0]= j;
@@ -386,17 +386,81 @@ void LaneDetector::getPointsFromImage(const cv::Mat & gray,
 	pts.copyTo(points);
 }
 
-void LaneDetector::autoContrast(const cv::Mat & gray, cv::Mat & grayAuto)
+void LaneDetector::autoContrast(const cv::Mat & src, cv::Mat & dst,
+	double histClipPct)
 {
-	CV_Assert(gray.type() == CV_8UC1);
+	CV_Assert(src.type() == CV_8UC1 || src.type()== CV_8UC3 ||
+	src.type()==CV_8UC4);
 
+	// convert to gray
+	cv::Mat gray;
+	if (src.type() == CV_8UC1)
+	{
+		gray = src;
+	}
+	else if (src.type() == CV_8UC3)
+	{
+		cvtColor(src, gray, CV_BGR2GRAY);
+	}
+	else if (src.type() == CV_8UC4)
+	{
+		cvtColor(src, gray, CV_BGRA2GRAY);
+	}
+
+	// determine intensity range
 	double minVal, maxVal;
-	cv::minMaxLoc(gray, &minVal, &maxVal);
+	int histSize = 256;
+	if (histClipPct == 0)
+	{
+		// keep full available range
+		cv::minMaxLoc(gray, &minVal, &maxVal);
+	}
+	else
+	{
+		cv::Mat hist; //the grayscale histogram
+
+		float range[] = { 0, 256 };
+		const float* histRange = { range };
+		bool uniform = true;
+		bool accumulate = false;
+		calcHist(&gray, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, uniform, accumulate);
+
+		// calculate cumulative distribution from the histogram
+		std::vector<float> accumulator(histSize);
+		accumulator[0] = hist.at<float>(0);
+		for (int i = 1; i < histSize; i++)
+		{
+			accumulator[i] = accumulator[i - 1] + hist.at<float>(i);
+		}
+
+		// locate points that cuts at required value
+		float max = accumulator.back();
+		histClipPct *= (max / 100.0); //make percent as absolute
+		histClipPct /= 2.0; // left and right wings
+		// locate left cut
+		minVal = 0;
+		while (accumulator[minVal] < histClipPct)
+			minVal++;
+
+		// locate right cut
+		maxVal = histSize - 1;
+		while (accumulator[maxVal] >= (max - histClipPct))
+			maxVal--;
+	}
+
 	double rangeIn = maxVal - minVal;
 	int intensityMax = 255;
 	double alpha = intensityMax / rangeIn;
 	double beta = -minVal*alpha;
-	gray.convertTo(grayAuto, -1, alpha, beta);  // using saturate_cast
+	src.convertTo(dst, -1, alpha, beta);  // using saturate_cast
+
+	// restore alpha channel from source 
+	if (dst.type() == CV_8UC4)
+	{
+		int from_to[] = { 3, 3 };
+		cv::mixChannels(&src, 4, &dst, 1, from_to, 1);
+	}
+
 }
 
 void BezierSpline::computeAccumulativeLength(
@@ -777,9 +841,11 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::Mat &bndGray, cv::Mat &dst)
 {
 	// enhance constrast
-	cv::Mat srcEh = src.clone();
-	srcEh.forEach<cv::Point3_<uint8_t>>(changeConstrast());
-
+	//cv::Mat srcEh = src.clone();
+	//srcEh.forEach<cv::Point3_<uint8_t>>(changeConstrast());
+	cv::Mat srcEh;
+	autoContrast(src, srcEh,2);
+	
 	// color thresholding
 	cv::Mat maskColor;
 	colorThresholding(srcEh, maskColor);
@@ -788,9 +854,11 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::Mat gray, grayC;
 	cv::cvtColor(srcEh, gray, cv::COLOR_BGR2GRAY);
 	cv::bitwise_and(gray, gray, grayC, maskColor);
+	
 
 	// bound
 	cropToROI(grayC, bndGray);
+	cv::equalizeHist(bndGray, bndGray);
 
 	// project to ground image
 	cv::Mat grayG;
@@ -883,7 +951,7 @@ void LaneDetector::colorThresholding(const cv::Mat & src, cv::Mat & maskOut)
 	cv::Scalar uby(57, 255, 255);
 	
 	//cv::Scalar lbw(0, 0, 200); // white
-	cv::Scalar lbw(0, 0, 150); // white
+	cv::Scalar lbw(0, 0, 220); // white
 	cv::Scalar ubw(255, 255, 255);
 	
 	cv::Mat edgeY, edgeW;//, edgeG;

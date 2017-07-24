@@ -149,7 +149,8 @@ public:
 		int uStart, int uEnd, int vStart, int vEnd,
 		cv::Mat &points);
 
-	static void autoContrast(const cv::Mat &gray, cv::Mat &grayAuto);
+	static void autoContrast(const cv::Mat &gray, cv::Mat &grayAuto, 
+		double histClipPct=0);
 
 	// ============ Properties =================================
 	cv::Mat mTM_vp; // transformation from vehicle to pixel frame
