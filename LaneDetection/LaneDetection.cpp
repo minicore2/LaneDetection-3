@@ -34,7 +34,7 @@ void testVideo(const std::string &fname)
 	std::string winN = "Lane Detection";
 	cv::namedWindow(winN, cv::WINDOW_AUTOSIZE);
 	cv::Mat src;
-	cv::Mat gndView, gndMarker, gndGray, bndGray, dst;
+	cv::Mat gndView, gndMarker, gndGray, srcBnd, dst;
 	int ct = 0;
 	while (cap.read(src))
 	{
@@ -49,7 +49,7 @@ void testVideo(const std::string &fname)
 			// hard video settings
 			/*ld.constructPerspectiveMapping(src.size(),
 				0, 0, 1, 0, 3*CV_PI / 180, 0);
-			ld.constructLUT(src.size(), 400, 0.15, 0.03);  // hard video
+			ld.constructLUT(src.size(), 400, 0.15, 0.02);  // hard video
 			*/
 
 			ld.initKF(ld.mXMap.size());
@@ -58,11 +58,12 @@ void testVideo(const std::string &fname)
 		{
 			double haha = 1;
 		}
-		ld.detectLane(src,gndView,gndMarker,gndGray,bndGray,dst);
+		std::vector<cv::Point> lpts, rpts;
+		ld.detectLane(src,srcBnd,gndGray,gndView,gndMarker,dst,lpts,rpts);
 		cv::imshow(winN, gndView);
 		cv::imshow("Markers", gndMarker);
 		cv::imshow("Ground", gndGray);
-		cv::imshow("Bound", bndGray);
+		cv::imshow("Bound", srcBnd);
 		cv::imshow("Overlay", dst);
 		int kc= cv::waitKey(0);
 		if (char(kc) == 'q')

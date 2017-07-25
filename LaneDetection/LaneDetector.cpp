@@ -971,7 +971,8 @@ void LaneDetector::colorThresholding(const cv::Mat & src, cv::Mat & maskOut)
 	cv::cvtColor(src, edgeH, cv::COLOR_BGR2HSV);
 
 	// color thresholding
-	cv::Scalar lby(14, 178, 127); // yellow
+	//cv::Scalar lby(14, 178, 127); // yellow
+	cv::Scalar lby(14, 100, 100); // yellow
 	cv::Scalar uby(57, 255, 255);
 	
 	//cv::Scalar lbw(0, 0, 200); // white
