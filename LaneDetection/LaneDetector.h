@@ -1,6 +1,8 @@
 #pragma once
-#include <opencv2\opencv.hpp>
-#include <expvideo\CameraUtility.h>
+#include <opencv2\core.hpp>
+#include <opencv2\highgui.hpp>
+#include <opencv2\video\tracking.hpp>
+#include "CameraUtility.h"	
 
 struct changeConstrast
 {
@@ -119,14 +121,27 @@ public:
 		int nDivX_2, int nDivY, 
 		std::vector<cv::Point> &pts, bool left);
 
-	void findLaneByKFOld(const cv::Mat &gray,
+	void getVerticalGrouppedPoints(const cv::Mat &gray,
+		int nDivX_2, int nDivY,
+		std::vector<cv::Point> &lpts, std::vector<cv::Point> &rpts);
+
+	/*void getSlopeScannedPoints(const cv::Mat &gray,
+		int nDivX_2, int nDivY,
+		std::vector<cv::Point> &pts, bool left);*/
+
+	void findLinearLaneByKF(const cv::Mat &gray,
 		std::vector<cv::Point> &lanePts, bool left);
 
-	void findLaneByKF(const cv::Mat &gray,
+	bool findLaneByKF(const cv::Mat &gray,
 		std::vector<cv::Point> &lanePts, bool left);
+
+	void updateLaneAngleByKF();
 
 	void getCamPtsFromGndImgPts(const std::vector<cv::Point> &gndImgPts,
 		std::vector<cv::Point> &camPts);
+
+	void getVehPtsFromGndImgPts(const std::vector<cv::Point> &gndImgPts,
+		std::vector<cv::Point2d> &vehPts);
 
 	// detect left and right lane
 	// @src: input image
@@ -135,13 +150,18 @@ public:
 	// @gndView: ground view with lines
 	// @gndMarker: ground lines with detected markers
 	// @dst: overlay output image
-	// @lpts: left lane detected points in vehicle frame
-	// @rpts: right lane detected points in vehicle frame
-	void detectLane(const cv::Mat & src,
+	// @leftPts: left lane detected points in vehicle frame
+	// @rightPts: right lane detected points in vehicle frame
+	/*void detectLaneOld(const cv::Mat & src,
 		cv::Mat &srcBnd, cv::Mat &gndGray,
 		cv::Mat &gndView, cv::Mat &gndMarker,
 		cv::Mat &dst,
-		std::vector<cv::Point> lpts, std::vector<cv::Point> rpts);
+		std::vector<cv::Point2d> &leftPts, std::vector<cv::Point2d> &rightPpts);
+	*/
+	void detectLane(const cv::Mat & src,
+		cv::Mat &srcBnd, cv::Mat &gndGray,
+		cv::Mat &gndView, cv::Mat &gndMarker,
+		cv::Mat &dst);
 
 	// ============ Utility Fcns =======================
 	
@@ -159,9 +179,15 @@ public:
 	static void getPointsFromImage(const cv::Mat &gray,
 		int uStart, int uEnd, int vStart, int vEnd,
 		cv::Mat &points);
-
+		
 	static void autoContrast(const cv::Mat &gray, cv::Mat &grayAuto, 
 		double histClipPct=0);
+
+	static void getHoughLines(const cv::Mat &gray, cv::Mat &grayLine);
+
+	static void pointsTransform(const std::vector<cv::Point> &pt, 
+		const cv::Mat &tm, std::vector<cv::Point> &ptOut);
+
 
 	// ============ Properties =================================
 	cv::Mat mTM_vp; // transformation from vehicle to pixel frame
@@ -171,6 +197,7 @@ public:
 	double mFocalY = 0.028;  
 	double mCCDX = 0.01586;
 	double mCCDY = 0.0132;
+	double mAspectRatio = -1;
 
 	// ROI constants
 	double mROI_yTop= 0.55;
@@ -189,10 +216,24 @@ public:
 	// kalman filters
 	cv::KalmanFilter *mKFL;
 	cv::KalmanFilter *mKFR;
+	cv::KalmanFilter *mKFA;  // lane angle
 	cv::Mat prevMeasL;
 	cv::Mat prevMeasR;
-	int mKFL_missCt = 0;
-	int mKFR_missCt = 0;
+	cv::Mat prevMeasA;
+
+	// lane info
+	bool mLDetected = false;
+	bool mRDetected = false;
+	std::vector<cv::Point> mLPts_gp;  // left lane points in ground image pixels
+	std::vector<cv::Point> mRPts_gp; // right lane points in ground image pixels
+	std::vector<cv::Point2d> mLPts_v;  // left lane points in vehicle frame
+	std::vector<cv::Point2d> mRPts_v; // right lane points in vehicle frame
+	double mLaneAng_gp = -90*CV_PI/180;  // lane angle in ground image pixels
+	const double mRefAng_gp = -90 * CV_PI / 180; // lane ref angle in ground pixels
+	
+
+	int mLMissCt = 0;
+	int mRMissCt = 0;
 };
 
 

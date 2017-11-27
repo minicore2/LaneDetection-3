@@ -29,8 +29,8 @@ void testVideo(const std::string &fname)
 	cap.open(fname);
 
 	LaneDetector ld;
-	ld.defineROI(0.6, 0.95, 0.45, 0.55, 0.1, 0.9); // hard video
-	
+	ld.defineROI(0.6, 0.85, 0.47, 0.53, 0.2, 0.83); // hard video
+		
 	std::string winN = "Lane Detection";
 	cv::namedWindow(winN, cv::WINDOW_AUTOSIZE);
 	cv::Mat src;
@@ -42,7 +42,7 @@ void testVideo(const std::string &fname)
 		{
 			// normal video settings
 			ld.constructPerspectiveMapping(src.size(),
-		    		0, 0, 1, 0, 2.2*CV_PI / 180, 0); 
+		    		0.0, 0, 1.0, 0, 2.2*CV_PI / 180, 0); 
 			ld.constructLUT(src.size(), 400, 0.15, 0.045); 
 			
 			
@@ -58,8 +58,8 @@ void testVideo(const std::string &fname)
 		{
 			double haha = 1;
 		}
-		std::vector<cv::Point> lpts, rpts;
-		ld.detectLane(src,srcBnd,gndGray,gndView,gndMarker,dst,lpts,rpts);
+		std::vector<cv::Point2d> lpts, rpts;
+		ld.detectLane(src,srcBnd,gndGray,gndView,gndMarker,dst);
 		cv::imshow(winN, gndView);
 		cv::imshow("Markers", gndMarker);
 		cv::imshow("Ground", gndGray);
@@ -94,9 +94,11 @@ void testAutoConstrast(const std::string &fname)
 int main()
 {
 	//testImage("./test_images/test2.jpg");
-	//testVideo("./challenge_video.mp4");
-	testVideo("./project_video.mp4");
+	testVideo("./challenge_video.mp4");
+	//testVideo("./project_video.mp4");
 	//testAutoConstrast("./test_images/test2.jpg");
+	//testVideo("ZionScenicDrive.mp4");
+	//testVideo("driving_at_night.mp4");
 
 	std::system("pause");
     return 0;
