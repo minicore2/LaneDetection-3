@@ -1214,10 +1214,6 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::Mat &gndView, cv::Mat &gndMarker, 
 	cv::Mat &dst)
 {
-	// compute average intensity value
-	cv::Scalar mv = cv::mean(src);
-	double avg_intensity = (mv(0) + mv(1) + mv(2)) / 3.0;
-
 	// enhance constrast
 	cv::Mat srcEh = src.clone();
 	cropToROI(src, srcBnd);
@@ -1235,7 +1231,10 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	
 	// if too bright use canny edge detection, otherwise use 
 	// gray-scale image directly
-	
+	// compute average intensity value
+	cv::Scalar mv = cv::mean(src);
+	double avg_intensity = (mv(0) + mv(1) + mv(2)) / 3.0;
+
 	if (avg_intensity > 100)
 	{
 		cv::Canny(gray, edges, 50, 150, 3);
