@@ -1235,7 +1235,7 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::Scalar mv = cv::mean(src);
 	double avg_intensity = (mv(0) + mv(1) + mv(2)) / 3.0;
 
-	if (avg_intensity > 100)
+	if (avg_intensity > 150)
 	{
 		cv::Canny(gray, edges, 50, 150, 3);
 		cv::bitwise_and(gray, edges, grayC, maskColor);

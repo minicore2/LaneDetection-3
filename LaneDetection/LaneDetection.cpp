@@ -31,8 +31,9 @@ void testVideo(const std::string &fname)
 	LaneDetector ld;
 	//ld.defineROI(0.6, 0.85, 0.47, 0.53, 0.2, 0.83); // hard video
 	//ld.defineROI(0.58, 0.85, 0.4, 0.6, 0.2, 0.83); // zion video
-	ld.defineROI(0.5, 0.8, 0.4, 0.6, 0.2, 0.83); // snow video
-		
+	//ld.defineROI(0.5, 0.8, 0.4, 0.6, 0.2, 0.83); // snow video
+	ld.defineROI(0.6, 0.9, 0.05, 0.95, 0.0, 1.0); // harder video
+
 	std::string winN = "Lane Detection";
 	cv::namedWindow(winN, cv::WINDOW_AUTOSIZE);
 	cv::Mat src;
@@ -54,13 +55,15 @@ void testVideo(const std::string &fname)
 			// normal video settings
 			//ld.constructPerspectiveMapping(src.size(),
 		    //		0.0, 0, 1.0, 0, 2.2*CV_PI / 180, 0); // default
+			//ld.constructPerspectiveMapping(src.size(),
+			//	0.0, 0, 1.0, 0, 1.2*CV_PI / 180, 0); // snow
 			ld.constructPerspectiveMapping(src.size(),
-				0.0, 0, 1.0, 0, 1.2*CV_PI / 180, 0); // snow
-
+				0.0, 0, 1.0, 0, 2.2*CV_PI / 180, 0); // harder
 
 			//ld.constructLUT(src.size(), 400, 0.15, 0.045); // challenge
 			//ld.constructLUT(src.size(), 400, 0.2, 0.045); // zion
-			ld.constructLUT(src.size(), 400, 0.25, 0.045); // snow
+			//ld.constructLUT(src.size(), 400, 0.25, 0.045); // snow
+			ld.constructLUT(src.size(), 400, 0.06, 0.025); // harder
 
 			
 			
@@ -72,7 +75,7 @@ void testVideo(const std::string &fname)
 
 			ld.initKF(ld.mXMap.size());
 		}
-		if (ct > 1000)
+		if (ct > 0)
 		{
 			std::vector<cv::Point2d> lpts, rpts;
 			ld.detectLane(src, srcBnd, gndGray, gndView, gndMarker, dst);
@@ -123,7 +126,8 @@ int main()
 	//testAutoConstrast("./test_images/test2.jpg");
 	//testVideo("ZionScenicDrive.mp4");
 	//testVideo("driving_at_night.mp4");
-	testVideo("driving_in_snow.mp4");
+	//testVideo("driving_in_snow.mp4");
+	testVideo("harder_challenge_video.mp4");
 
 	std::system("pause");
     return 0;
