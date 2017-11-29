@@ -189,7 +189,7 @@ void LaneDetector::initKF(cv::Size imgSize)
 	mKFL->transitionMatrix = cv::Mat::eye(16, 16, CV_32FC1);
 	// speed part
 	cv::Rect roi(8,0,8,8);
-	mKFL->transitionMatrix(roi)= 10*cv::Mat::eye(8, 8, CV_32FC1);
+	mKFL->transitionMatrix(roi) = 1 *cv::Mat::eye(8, 8, CV_32FC1);
 
 	for (int i = 0; i < 16; ++i)
 	{
@@ -204,7 +204,7 @@ void LaneDetector::initKF(cv::Size imgSize)
 	prevMeasR = cv::Mat::zeros(8, 1, CV_32FC1);
 	mKFR->transitionMatrix = cv::Mat::eye(16, 16, CV_32FC1);
 	// speed part
-	mKFR->transitionMatrix(roi) = 2*cv::Mat::eye(8, 8, CV_32FC1);
+	mKFR->transitionMatrix(roi) = 1*cv::Mat::eye(8, 8, CV_32FC1);
 
 	for (int i = 0; i < 16; ++i)
 	{
@@ -220,7 +220,7 @@ void LaneDetector::initKF(cv::Size imgSize)
 	prevMeasA.at<float>(0, 0) = mRefAng_gp;
 	mKFA->transitionMatrix = cv::Mat::eye(2, 2, CV_32FC1);
 	// speed part
-	mKFA->transitionMatrix.at<float>(0,1)= 0.0001;
+	mKFA->transitionMatrix.at<float>(0,1)= 0.0001;  
 
 	for (int i = 0; i < 2; ++i)
 	{
@@ -613,7 +613,7 @@ bool BezierSpline::fitRANSACSpline(cv::Size imgSize,
 		double curveLen = saccTest.back() / imgSize.height -1;
 		double curveness = computeSplineCurveness();
 
-		double cost = 1*curveLen + 1*curveness; // to maximize
+		double cost = 1*curveLen + 2*curveness; // to maximize
 		//std::cout << "curveness= " << curveness << "\n";
 		if (cost > costMax && curveness >0.4 )
 		{
@@ -690,6 +690,7 @@ void LaneDetector::getVerticalScannedPoints(const cv::Mat & gray,
 			}
 		}
 	}
+	
 }
 
 void LaneDetector::getVerticalGrouppedPoints(
@@ -935,8 +936,9 @@ bool LaneDetector::findLaneByKF(const cv::Mat & gray,
 	predicted = (left) ? mKFL->predict() : mKFR->predict();
 
 	// measure
-	std::vector<cv::Point> vpts, vptsL, vptsR;
+	std::vector<cv::Point> vpts;
 	getVerticalScannedPoints(gray, nDivX_2, nDivY, vpts, left);
+	
 	//getSlopeScannedPoints(gray, nDivX_2, nDivY, vpts, left);
 	//getVerticalGrouppedPoints(gray, nDivX_2, nDivY, vptsL, vptsR);
 	//vpts = (left) ? vptsL : vptsR;
@@ -1212,10 +1214,14 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::Mat &gndView, cv::Mat &gndMarker, 
 	cv::Mat &dst)
 {
+	// compute average intensity value
+	cv::Scalar mv = cv::mean(src);
+	double avg_intensity = (mv(0) + mv(1) + mv(2)) / 3.0;
+
 	// enhance constrast
 	cv::Mat srcEh = src.clone();
 	cropToROI(src, srcBnd);
-	autoContrast(srcBnd, srcBnd,0.0);
+	autoContrast(srcBnd, srcBnd,0.1);
 		
 	// color thresholding
 	cv::Mat maskColor;
@@ -1225,7 +1231,20 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::Mat gray, grayC, edges;
 	cv::cvtColor(srcBnd, gray, cv::COLOR_BGR2GRAY);
 	
-	cv::bitwise_and(gray, gray, grayC,maskColor);
+	cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0);
+	
+	// if too bright use canny edge detection, otherwise use 
+	// gray-scale image directly
+	
+	if (avg_intensity > 100)
+	{
+		cv::Canny(gray, edges, 50, 150, 3);
+		cv::bitwise_and(gray, edges, grayC, maskColor);
+	}
+	else
+	{
+		cv::bitwise_and(gray, gray, grayC, maskColor);
+	}
 	
 	// project to ground image
 	cv::Mat grayG;
@@ -1234,7 +1253,7 @@ void LaneDetector::detectLane(const cv::Mat & src,
 
 	// rotate image to align the lane direction
 	cv::Mat grayGR;  // rotated ground gray image
-	double rotAng = 0.0*(mLaneAng_gp - mRefAng_gp) / CV_PI * 180;
+	double rotAng = 0.8*(mLaneAng_gp - mRefAng_gp) / CV_PI * 180;
 	//std::cout << "rotAng= " << rotAng << " deg\n";
 	cv::Mat rotMat= cv::getRotationMatrix2D(
 		cv::Point(grayG.cols/2, 3*grayG.rows/4),rotAng, 1);
@@ -1283,10 +1302,16 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	getCamPtsFromGndImgPts(mLPts_gp, lpts_p);
 	getCamPtsFromGndImgPts(mRPts_gp, rpts_p);
 
+	
+	BezierSpline bs;
 	// draw line
 	if (lpts_p.size() > 2)
 	{
-		// extend line
+		// smooth line		
+		bs.fit(lpts_p);
+		bs.interpolatePts(15, lpts_p);
+				
+		// draw line
 		for (int i = 0; i < lpts_p.size() - 1; ++i)
 		{
 			cv::line(srcEh, lpts_p[i], lpts_p[i + 1],
@@ -1295,6 +1320,11 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	}
 	if (rpts_p.size() > 2)
 	{
+		// smooth line		
+		bs.fit(rpts_p);
+		bs.interpolatePts(15, rpts_p);
+
+		// draw line
 		for (int i = 0; i < rpts_p.size() - 1; ++i)
 		{
 			cv::line(srcEh, rpts_p[i], rpts_p[i + 1],
