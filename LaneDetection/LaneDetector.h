@@ -121,6 +121,10 @@ public:
 		int nDivX_2, int nDivY, 
 		std::vector<cv::Point> &pts, bool left);
 
+	void getAdaptiveScannedPoints(const cv::Mat &gray,
+		int nDivX_2, int nDivY,
+		std::vector<cv::Point> &pts, bool left);
+
 	void getVerticalGrouppedPoints(const cv::Mat &gray,
 		int nDivX_2, int nDivY,
 		std::vector<cv::Point> &lpts, std::vector<cv::Point> &rpts);

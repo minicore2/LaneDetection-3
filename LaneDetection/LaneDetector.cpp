@@ -693,6 +693,77 @@ void LaneDetector::getVerticalScannedPoints(const cv::Mat & gray,
 	
 }
 
+void LaneDetector::getAdaptiveScannedPoints(const cv::Mat & gray, int nDivX_2, int nDivY, std::vector<cv::Point>& pts, bool left)
+{
+	pts.clear();
+	int xsize = gray.cols;
+	int dpx = (xsize / 2) / nDivX_2; // pixel progression in x dir
+
+	int minPtCount = 1;
+
+	int u0 = xsize / 2;
+	int ysize = gray.rows;
+	int v0 = ysize - 1;
+	int dpy = ysize / nDivY; // pixel progression in y dir
+
+	for (int iy = 0; iy < nDivY; ++iy)
+	{
+		// y need to be reversed
+		int vStart = (v0)-iy*(dpy);
+		int vEnd = (v0)-((iy + 1)*(dpy)-1);
+
+		// update u0 based on previous vertical scans
+		size_t npt = pts.size();
+		if (npt >=5)
+		{
+			int x2 = (pts[npt - 1].x + pts[npt - 2].x + pts[npt - 3].x) / 3;
+			int x1 = (pts[npt - 3].x + pts[npt - 4].x + pts[npt - 5].x) / 3;
+			int y2 = (pts[npt - 1].y + pts[npt - 2].y + pts[npt - 3].y) / 3;
+			int y1 = (pts[npt - 3].y + pts[npt - 4].y + pts[npt - 5].y) / 3;
+
+			int dx = x2-x1;
+			int dy = y2 - y1;
+			u0 = u0 + dx/dy*dpy;
+		}
+
+		// loop in x direction
+		int uStart, uEnd;
+		for (int ix = 0; ix < nDivX_2; ++ix)
+		{
+			if (left)
+			{
+				uStart = (u0 - 1) - ((ix + 1)*(dpx)-1);
+				uEnd = (u0 - 1) - ix*(dpx);
+			}
+			else
+			{
+				uStart = (u0)+ix*(dpx);
+				uEnd = (u0)+((ix + 1)*(dpx)) - 1;
+			}
+			// check the scanning box is inbound of image
+			if (uStart >= gray.cols || uStart < 0 ||
+				uEnd >= gray.cols || uEnd < 0 ||
+				vStart >= gray.rows || vStart < 0 ||
+				vEnd >= gray.rows || vEnd < 0)
+			{
+				break; 
+			}
+
+			cv::Mat ipts;
+			getPointsFromImage(gray, uStart, uEnd, vEnd, vStart, ipts);
+			if (ipts.rows >= minPtCount)
+			{
+				cv::Scalar meanV = cv::mean(ipts);
+				cv::Point pt;
+				pt.x = meanV.val[0];
+				pt.y = meanV.val[1];
+				pts.push_back(pt);
+				break;
+			}
+		}
+	}
+}
+
 void LaneDetector::getVerticalGrouppedPoints(
 	const cv::Mat & gray, 
 	int nDivX_2, int nDivY, 
@@ -922,7 +993,7 @@ bool LaneDetector::findLaneByKF(const cv::Mat & gray,
 	int xsize = gray.cols;
 	int ysize = gray.rows;
 
-	int nDivY = 40;
+	int nDivY = 20;
 	int dpx = 0.1 / mMPPy; // sliding window width in x dir
 	int nDivX_2 = (xsize / 2) / dpx;
 
@@ -937,8 +1008,9 @@ bool LaneDetector::findLaneByKF(const cv::Mat & gray,
 
 	// measure
 	std::vector<cv::Point> vpts;
-	getVerticalScannedPoints(gray, nDivX_2, nDivY, vpts, left);
-	
+	//getVerticalScannedPoints(gray, nDivX_2, nDivY, vpts, left);
+	getAdaptiveScannedPoints(gray, nDivX_2, nDivY, vpts, left);
+
 	//getSlopeScannedPoints(gray, nDivX_2, nDivY, vpts, left);
 	//getVerticalGrouppedPoints(gray, nDivX_2, nDivY, vptsL, vptsR);
 	//vpts = (left) ? vptsL : vptsR;
@@ -1235,7 +1307,7 @@ void LaneDetector::detectLane(const cv::Mat & src,
 	cv::Scalar mv = cv::mean(src);
 	double avg_intensity = (mv(0) + mv(1) + mv(2)) / 3.0;
 
-	if (avg_intensity > 150)
+	if (avg_intensity > 100)
 	{
 		cv::Canny(gray, edges, 50, 150, 3);
 		cv::bitwise_and(gray, edges, grayC, maskColor);
